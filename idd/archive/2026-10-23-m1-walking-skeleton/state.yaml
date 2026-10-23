@@ -1,0 +1,847 @@
+{
+  "schema": "idd-state/v1",
+  "change": "m1-walking-skeleton",
+  "mode": "idd",
+  "status": "closed",
+  "intent": {
+    "request": "continua con M1 (walking skeleton) según docs/roadmap.md",
+    "kind": "feature",
+    "summary": "Motor Go de proceso único: sondas por capas sin privilegios, clasificación de cortes, historial local versionado e icono SNI con el estado real, con logs estructurados",
+    "acceptance": "Al ejecutar el binario en Omarchy el icono SNI refleja si hay conexión y en qué capa falla; un corte real o simulado queda guardado con inicio, duración y clasificación y sobrevive a reiniciar el proceso"
+  },
+  "facts": {
+    "coverage": [
+      {
+        "category": "inputs",
+        "question": "¿Qué intervalo de sondeo en segundos, qué objetivos (wlan0, gateway ICMP, 1.1.1.1/8.8.8.8, DNS) y cuántos fallos consecutivos declaran un corte?"
+      },
+      {
+        "category": "uniqueness",
+        "question": "¿Dos caídas separadas por menos de N segundos se fusionan en un único corte, y con qué N?"
+      },
+      {
+        "category": "persistence",
+        "question": "¿Qué biblioteca y formato guarda el historial: SQLite puro Go (modernc.org/sqlite), bbolt o JSON Lines propio, y en qué ruta bajo ~/.local/share?"
+      },
+      {
+        "category": "copy",
+        "question": "¿Qué textos y etiquetas de capa muestran el tooltip y el menú del icono (idioma español, nombres wifi/router/línea/operador)?"
+      },
+      {
+        "category": "url-state",
+        "cite": {
+          "kind": "path",
+          "path": "docs/architecture/technical-baseline.md",
+          "line": 48
+        }
+      },
+      {
+        "category": "accessibility",
+        "question": "¿El icono distingue los estados solo por color o también por forma/tooltip, y con cuántos estados (ok, degradado, caído por capa)?"
+      },
+      {
+        "category": "errors",
+        "question": "¿Qué hace el motor si falla la escritura del historial o no hay barra SNI: sigue registrando y reintenta cada N segundos, o termina?"
+      }
+    ]
+  },
+  "plan": {
+    "paths": [
+      "cmd/netmon-tray/main.go",
+      "go.mod",
+      "internal/adapter/logging/logging.go",
+      "internal/adapter/probe/probe.go",
+      "internal/adapter/probe/probe_test.go",
+      "internal/adapter/storage/sqlite.go",
+      "internal/adapter/storage/sqlite_test.go",
+      "internal/adapter/tray/tray.go",
+      "internal/app/engine.go",
+      "internal/app/engine_test.go",
+      "internal/domain/classify.go",
+      "internal/domain/classify_test.go",
+      "internal/domain/layer.go",
+      "internal/domain/outage.go"
+    ],
+    "work_units": 5,
+    "decision": true,
+    "operations": []
+  },
+  "signals": [
+    {
+      "id": "always",
+      "reason": "every change with a resolved intent",
+      "source": "declaration"
+    },
+    {
+      "id": "multi-unit-or-decision",
+      "reason": "declared 5 work units",
+      "source": "declaration"
+    },
+    {
+      "id": "persistent-data",
+      "reason": "persistent data: touches internal/adapter/storage/sqlite.go and 1 more (matches internal/adapter/storage/**)",
+      "source": "declaration"
+    },
+    {
+      "id": "security-boundary",
+      "reason": "security boundary: touches internal/adapter/probe/probe.go and 1 more (matches internal/adapter/probe/**)",
+      "source": "declaration"
+    },
+    {
+      "id": "adr-or-quality-attribute",
+      "reason": "declared ADR 0001, 0002, 0003, 0004 and quality scenario durable-history, live-status, minimal-footprint, short-outage-detection",
+      "source": "declaration"
+    }
+  ],
+  "impacts": [
+    {
+      "kind": "adr",
+      "id": "0001",
+      "impact": "conforms",
+      "reason": "Un único binario cmd/netmon-tray: el motor sondea, clasifica y escribe el historial en el mismo proceso; el icono solo recibe estado."
+    },
+    {
+      "kind": "adr",
+      "id": "0002",
+      "impact": "conforms",
+      "reason": "internal/domain no importa adaptadores; sondas, almacén, bandeja y logging viven en internal/adapter, y las sondas de Linux están tras archivos route_linux.go/route_other.go."
+    },
+    {
+      "kind": "adr",
+      "id": "0003",
+      "impact": "conforms",
+      "reason": "Almacén SQLite con único escritor, user_version y migración al abrir, permisos 0600. La rotación a 60 días y la exportación no están en M1: el roadmap las asigna a M2."
+    },
+    {
+      "kind": "adr",
+      "id": "0004",
+      "impact": "conforms",
+      "reason": "Sondas por capas (enlace, gateway ICMP, internet ICMP, DNS) sin root vía ping sockets; clasifica en la capa más cercana que falla."
+    },
+    {
+      "kind": "scenario",
+      "id": "durable-history",
+      "impact": "conforms",
+      "reason": "Reapertura y migración probadas; rotación y exportación quedan para M2 según el roadmap."
+    },
+    {
+      "kind": "scenario",
+      "id": "live-status",
+      "impact": "conforms",
+      "reason": "El motor publica el estado en cada muestra a un Sink; el contrato de control llega en M3 y el icono no hace E/S de red."
+    },
+    {
+      "kind": "scenario",
+      "id": "minimal-footprint",
+      "impact": "conforms",
+      "reason": "Intervalo fijo de 2 s, 3 ICMP y 1 DNS cada 10 s; medido manualmente en este equipo."
+    },
+    {
+      "kind": "scenario",
+      "id": "short-outage-detection",
+      "impact": "conforms",
+      "reason": "Clasificador y tracker con secuencias simuladas; con 2 s y 3 fallos solo se registran cortes de unos 6 s o más, según lo confirmado por el usuario."
+    }
+  ],
+  "attestations": [
+    {
+      "kind": "adr",
+      "id": "0001",
+      "evidence": "Único func main en cmd/netmon-tray/main.go; internal/adapter/tray no importa net ni http y Publish solo llama a setters de systray.",
+      "recorded_at": "2026-10-23T19:20:19.499Z"
+    },
+    {
+      "kind": "adr",
+      "id": "0003",
+      "evidence": "Reapertura (TestHistorySurvivesReopen) y migración (TestOpenMigratesAnUnversionedFile, TestOpenRefusesNewerSchema) probadas. Rotación a 60 días y exportación NO verificadas: pertenecen a M2.",
+      "recorded_at": "2026-10-23T19:20:19.556Z"
+    },
+    {
+      "kind": "adr",
+      "id": "0004",
+      "evidence": "Clasificador y tracker con secuencias simuladas incluido un corte de 6 s (internal/domain/classify_test.go). El binario se ejecutó como usuario normal con ping sockets (net.ipv4.ping_group_range 0 2147483647) y sin root.",
+      "recorded_at": "2026-10-23T19:20:19.614Z"
+    },
+    {
+      "kind": "scenario",
+      "id": "durable-history",
+      "evidence": "Reapertura y migración verificadas en internal/adapter/storage; rotación y exportación pendientes en M2.",
+      "recorded_at": "2026-10-23T19:20:19.671Z"
+    },
+    {
+      "kind": "scenario",
+      "id": "live-status",
+      "evidence": "Engine.tick publica el Status en cada muestra (TestEngineStoresOutageAndPublishesStatus); sin contrato de control aún (M3); el tray no hace E/S de red.",
+      "recorded_at": "2026-10-23T19:20:19.726Z"
+    },
+    {
+      "kind": "scenario",
+      "id": "minimal-footprint",
+      "evidence": "Intervalo fijo de 2 s, 3 ICMP y 1 DNS cada 10 s. Medido en 14 s de ejecución: RSS 21,8 MB, 0,0 % CPU, 12 hilos. Bytes por sondeo no medidos con captura; estimación por cálculo ~100 B salientes cada 2 s más 1 consulta DNS cada 10 s.",
+      "recorded_at": "2026-10-23T19:20:19.784Z"
+    },
+    {
+      "kind": "scenario",
+      "id": "short-outage-detection",
+      "evidence": "TestTrackerClosesShortOutageWithMeasuredDuration y TestTrackerConfirmsOutageAfterThreshold; con 2 s y 3 fallos el corte mínimo registrable es de ~6 s.",
+      "recorded_at": "2026-10-23T19:20:19.840Z"
+    }
+  ],
+  "obligations": [
+    {
+      "id": "checks-pass",
+      "signal": "always",
+      "status": "satisfied",
+      "evidence": [
+        "ev-9"
+      ]
+    },
+    {
+      "id": "living-doc",
+      "signal": "multi-unit-or-decision",
+      "status": "satisfied",
+      "evidence": [
+        "ev-11"
+      ]
+    },
+    {
+      "id": "migration-compat-and-test",
+      "signal": "persistent-data",
+      "status": "satisfied",
+      "evidence": [
+        "ev-7"
+      ]
+    },
+    {
+      "id": "trust-review",
+      "signal": "security-boundary",
+      "status": "satisfied",
+      "evidence": [
+        "ev-8"
+      ]
+    },
+    {
+      "id": "adr-impact-declaration",
+      "signal": "adr-or-quality-attribute",
+      "status": "satisfied",
+      "evidence": [
+        "ev-10"
+      ]
+    }
+  ],
+  "gates": [
+    {
+      "id": "open-facts",
+      "status": "resolved",
+      "answer": "Sondeo 2 s con 3 fallos consecutivos (objetivos: enlace wlan0, gateway ICMP, 1.1.1.1 y 8.8.8.8, DNS); almacén SQLite puro Go modernc.org/sqlite en ~/.local/share/netmon-tray/; fusionar caídas separadas por menos de 10 s; icono fyne.io/systray con 4 estados (verde OK, ámbar degradado, rojo caído, gris sin datos) por color y tooltip en español",
+      "source": "user"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "ev-1",
+      "kind": "migration-test",
+      "obligation": "migration-compat-and-test",
+      "recorded_at": "2026-10-23T19:19:52.441Z",
+      "detail": {
+        "run": "run-1",
+        "tree": "sha256:f7187eb83752219bcd50ab7d95c7ea7c6f9c463079a6ab8d90bfacc2649fcac8",
+        "plan": "Esquema v1 inicial: un archivo sin versión (user_version 0) migra a v1 al abrir; un archivo con versión mayor se rechaza sin tocarlo, así que bajar de versión el binario no corrompe el historial. Futuras migraciones se añaden a migrations[] y nunca se reescriben."
+      }
+    },
+    {
+      "id": "ev-2",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-23T19:20:24.610Z",
+      "detail": {
+        "tree": "sha256:044d19d7a5c506ef4694dbd48658adef93334f63bed7dc131c5a0d4648c5cf48",
+        "runs": [
+          "run-2",
+          "run-3"
+        ]
+      }
+    },
+    {
+      "id": "ev-3",
+      "kind": "adr-impact-declaration",
+      "obligation": "adr-impact-declaration",
+      "recorded_at": "2026-10-23T19:20:24.610Z",
+      "detail": {
+        "refs": [
+          "adr:0001 conforms",
+          "adr:0002 conforms",
+          "adr:0003 conforms",
+          "adr:0004 conforms",
+          "scenario:durable-history conforms",
+          "scenario:live-status conforms",
+          "scenario:minimal-footprint conforms",
+          "scenario:short-outage-detection conforms"
+        ],
+        "records": [],
+        "tree": "sha256:044d19d7a5c506ef4694dbd48658adef93334f63bed7dc131c5a0d4648c5cf48",
+        "fitness": [
+          "run-4"
+        ]
+      }
+    },
+    {
+      "id": "ev-4",
+      "kind": "frozen-review",
+      "obligation": "trust-review",
+      "recorded_at": "2026-10-23T19:21:41.767Z",
+      "detail": {
+        "lineage_id": "sha256:bb7f14689e2a166b96e120cc7070747aba0e0444cc0f3a0c9aac2c5098b385ef",
+        "candidate_id": "sha256:b256e3f9cac3a7163d6b5c3fb1e56f875ea040b6ee42ea2268d93b8e7a4a5738",
+        "candidate_tree": "1c2cef537dcf7c580b7a1363e8da4d2281f30f4a",
+        "findings_digest": "sha256:292a9981f8a614d2f8d648deb6fe1c09372dbad28bb962a5e483168e8c0ca1e2",
+        "attestation": "relayed"
+      }
+    },
+    {
+      "id": "ev-5",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-23T19:21:58.149Z",
+      "detail": {
+        "tree": "sha256:043e26b30ef39d4fba2e3cff566f2c72558387d0bdbda3ddab7325aed5f8d5cb",
+        "runs": [
+          "run-5",
+          "run-6"
+        ]
+      }
+    },
+    {
+      "id": "ev-6",
+      "kind": "adr-impact-declaration",
+      "obligation": "adr-impact-declaration",
+      "recorded_at": "2026-10-23T19:21:58.149Z",
+      "detail": {
+        "refs": [
+          "adr:0001 conforms",
+          "adr:0002 conforms",
+          "adr:0003 conforms",
+          "adr:0004 conforms",
+          "scenario:durable-history conforms",
+          "scenario:live-status conforms",
+          "scenario:minimal-footprint conforms",
+          "scenario:short-outage-detection conforms"
+        ],
+        "records": [],
+        "tree": "sha256:043e26b30ef39d4fba2e3cff566f2c72558387d0bdbda3ddab7325aed5f8d5cb",
+        "fitness": [
+          "run-7"
+        ]
+      }
+    },
+    {
+      "id": "ev-7",
+      "kind": "migration-test",
+      "obligation": "migration-compat-and-test",
+      "recorded_at": "2026-10-23T19:22:03.701Z",
+      "detail": {
+        "run": "run-8",
+        "tree": "sha256:1289937bfe6259dee6b589a140b6a8da144aa681507ba1bf40b8105a6bc4d706",
+        "plan": "Esquema v1 inicial: un archivo sin versión (user_version 0) migra a v1 al abrir; un archivo con versión mayor se rechaza sin tocarlo, así que bajar de versión el binario no corrompe el historial. Futuras migraciones se añaden a migrations[] y nunca se reescriben."
+      }
+    },
+    {
+      "id": "ev-8",
+      "kind": "frozen-review",
+      "obligation": "trust-review",
+      "recorded_at": "2026-10-23T19:23:02.969Z",
+      "detail": {
+        "lineage_id": "sha256:2147a73095922a818ed9e06ca3297f5f35cfc1a783f6d111b8653111a6c0d997",
+        "candidate_id": "sha256:195dc17094c07da0fb2462eda6e2585000471b8dee83ca98362ace17a2fcca7b",
+        "candidate_tree": "8e885a42d6f6fbb2bcefdc39b7058260119e9df5",
+        "findings_digest": "sha256:fb894ee143c6c82d6f45069b145c7bd3399a99842390677db05bf540d4749711",
+        "attestation": "relayed"
+      }
+    },
+    {
+      "id": "ev-9",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-23T19:23:03.268Z",
+      "detail": {
+        "tree": "sha256:043e26b30ef39d4fba2e3cff566f2c72558387d0bdbda3ddab7325aed5f8d5cb",
+        "runs": [
+          "run-9",
+          "run-10"
+        ]
+      }
+    },
+    {
+      "id": "ev-10",
+      "kind": "adr-impact-declaration",
+      "obligation": "adr-impact-declaration",
+      "recorded_at": "2026-10-23T19:23:03.268Z",
+      "detail": {
+        "refs": [
+          "adr:0001 conforms",
+          "adr:0002 conforms",
+          "adr:0003 conforms",
+          "adr:0004 conforms",
+          "scenario:durable-history conforms",
+          "scenario:live-status conforms",
+          "scenario:minimal-footprint conforms",
+          "scenario:short-outage-detection conforms"
+        ],
+        "records": [],
+        "tree": "sha256:043e26b30ef39d4fba2e3cff566f2c72558387d0bdbda3ddab7325aed5f8d5cb",
+        "fitness": [
+          "run-11"
+        ]
+      }
+    },
+    {
+      "id": "ev-11",
+      "kind": "living-doc-current",
+      "obligation": "living-doc",
+      "recorded_at": "2026-10-23T19:23:09.064Z"
+    }
+  ],
+  "base": "e0f5a73f3c617313dc847c797ae662db7dbb8eee",
+  "runs": [
+    {
+      "id": "run-1",
+      "purpose": "migration-test",
+      "command": "go test ./internal/adapter/storage/ -run 'Migrates|RefusesNewer|SurvivesReopen|Dangling' -v",
+      "exit_code": 0,
+      "output_sha256": "sha256:6f031f5659c18135f08797d104a35263efef437d304c4bda10cea128f02a72cc",
+      "tree": "sha256:f7187eb83752219bcd50ab7d95c7ea7c6f9c463079a6ab8d90bfacc2649fcac8",
+      "recorded_at": "2026-10-23T19:19:52.441Z"
+    },
+    {
+      "id": "run-2",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:84ae95fd18175fc47363cf7ada00170a0113dad95d9c15b24e4eea7101b4e43c",
+      "tree": "sha256:044d19d7a5c506ef4694dbd48658adef93334f63bed7dc131c5a0d4648c5cf48",
+      "recorded_at": "2026-10-23T19:20:24.610Z"
+    },
+    {
+      "id": "run-3",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:044d19d7a5c506ef4694dbd48658adef93334f63bed7dc131c5a0d4648c5cf48",
+      "recorded_at": "2026-10-23T19:20:24.610Z"
+    },
+    {
+      "id": "run-4",
+      "purpose": "fitness",
+      "ref": "adr:0002",
+      "command": "! go list -deps ./internal/domain/... | grep -E 'internal/adapter|dbus|systemd'",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:044d19d7a5c506ef4694dbd48658adef93334f63bed7dc131c5a0d4648c5cf48",
+      "recorded_at": "2026-10-23T19:20:24.610Z"
+    },
+    {
+      "id": "run-5",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:6aca2ff5dfaca98ddca42a985381102326515bd32a58a621796f4b21c5c8a9f6",
+      "tree": "sha256:043e26b30ef39d4fba2e3cff566f2c72558387d0bdbda3ddab7325aed5f8d5cb",
+      "recorded_at": "2026-10-23T19:21:58.149Z"
+    },
+    {
+      "id": "run-6",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:043e26b30ef39d4fba2e3cff566f2c72558387d0bdbda3ddab7325aed5f8d5cb",
+      "recorded_at": "2026-10-23T19:21:58.149Z"
+    },
+    {
+      "id": "run-7",
+      "purpose": "fitness",
+      "ref": "adr:0002",
+      "command": "! go list -deps ./internal/domain/... | grep -E 'internal/adapter|dbus|systemd'",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:043e26b30ef39d4fba2e3cff566f2c72558387d0bdbda3ddab7325aed5f8d5cb",
+      "recorded_at": "2026-10-23T19:21:58.149Z"
+    },
+    {
+      "id": "run-8",
+      "purpose": "migration-test",
+      "command": "go test ./internal/adapter/storage/ -run 'Migrates|RefusesNewer|SurvivesReopen|Dangling|Private' -v",
+      "exit_code": 0,
+      "output_sha256": "sha256:1a0a44592fee1ddc6ab55e22934dbc79ba981acfa21799b7f7df66ed9fb2ea5e",
+      "tree": "sha256:1289937bfe6259dee6b589a140b6a8da144aa681507ba1bf40b8105a6bc4d706",
+      "recorded_at": "2026-10-23T19:22:03.701Z"
+    },
+    {
+      "id": "run-9",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:84ae95fd18175fc47363cf7ada00170a0113dad95d9c15b24e4eea7101b4e43c",
+      "tree": "sha256:043e26b30ef39d4fba2e3cff566f2c72558387d0bdbda3ddab7325aed5f8d5cb",
+      "recorded_at": "2026-10-23T19:23:03.268Z"
+    },
+    {
+      "id": "run-10",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:043e26b30ef39d4fba2e3cff566f2c72558387d0bdbda3ddab7325aed5f8d5cb",
+      "recorded_at": "2026-10-23T19:23:03.268Z"
+    },
+    {
+      "id": "run-11",
+      "purpose": "fitness",
+      "ref": "adr:0002",
+      "command": "! go list -deps ./internal/domain/... | grep -E 'internal/adapter|dbus|systemd'",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:043e26b30ef39d4fba2e3cff566f2c72558387d0bdbda3ddab7325aed5f8d5cb",
+      "recorded_at": "2026-10-23T19:23:03.268Z"
+    }
+  ],
+  "reviews": [
+    {
+      "schema_version": 2,
+      "lineage_id": "sha256:bb7f14689e2a166b96e120cc7070747aba0e0444cc0f3a0c9aac2c5098b385ef",
+      "generation": 1,
+      "predecessor_lineage_id": null,
+      "migration": null,
+      "recovery": null,
+      "revision": 3,
+      "status": "approved",
+      "genesis": {
+        "candidate": {
+          "projection": "idd-tree-diff/v1",
+          "base_tree": "d90d3ef2d1d48cf7ec13f1592869d7373d24a861",
+          "candidate_tree": "1c2cef537dcf7c580b7a1363e8da4d2281f30f4a",
+          "paths": [
+            "cmd/netmon-tray/main.go",
+            "go.mod",
+            "go.sum",
+            "internal/adapter/logging/logging.go",
+            "internal/adapter/probe/probe.go",
+            "internal/adapter/probe/probe_test.go",
+            "internal/adapter/probe/route_linux.go",
+            "internal/adapter/probe/route_other.go",
+            "internal/adapter/storage/sqlite.go",
+            "internal/adapter/storage/sqlite_test.go",
+            "internal/adapter/tray/tray.go",
+            "internal/app/engine.go",
+            "internal/app/engine_test.go",
+            "internal/domain/classify.go",
+            "internal/domain/classify_test.go",
+            "internal/domain/layer.go",
+            "internal/domain/outage.go"
+          ],
+          "diff_hash": "sha256:23a40376fbb35e9aa562805aec8daf77a50b608291a0136abaf8a98c41d7470d",
+          "paths_digest": "sha256:861be68a90d6dc57baa788c31c3e9abeaf57bf43e2e42982823897b698ce4955",
+          "authored_lines": 1565,
+          "original_changed_lines": 1565
+        },
+        "candidate_id": "sha256:b256e3f9cac3a7163d6b5c3fb1e56f875ea040b6ee42ea2268d93b8e7a4a5738",
+        "paths": [
+          "cmd/netmon-tray/main.go",
+          "go.mod",
+          "go.sum",
+          "internal/adapter/logging/logging.go",
+          "internal/adapter/probe/probe.go",
+          "internal/adapter/probe/probe_test.go",
+          "internal/adapter/probe/route_linux.go",
+          "internal/adapter/probe/route_other.go",
+          "internal/adapter/storage/sqlite.go",
+          "internal/adapter/storage/sqlite_test.go",
+          "internal/adapter/tray/tray.go",
+          "internal/app/engine.go",
+          "internal/app/engine_test.go",
+          "internal/domain/classify.go",
+          "internal/domain/classify_test.go",
+          "internal/domain/layer.go",
+          "internal/domain/outage.go"
+        ],
+        "classification": "high-risk",
+        "selected_domains": [
+          "trust"
+        ],
+        "evidence_fingerprint": "1c2cef537dcf7c580b7a1363e8da4d2281f30f4a",
+        "original_changed_lines": 1565,
+        "authored_lines": 1565
+      },
+      "current_candidate_id": "sha256:b256e3f9cac3a7163d6b5c3fb1e56f875ea040b6ee42ea2268d93b8e7a4a5738",
+      "current_candidate": {
+        "projection": "idd-tree-diff/v1",
+        "base_tree": "d90d3ef2d1d48cf7ec13f1592869d7373d24a861",
+        "candidate_tree": "1c2cef537dcf7c580b7a1363e8da4d2281f30f4a",
+        "paths": [
+          "cmd/netmon-tray/main.go",
+          "go.mod",
+          "go.sum",
+          "internal/adapter/logging/logging.go",
+          "internal/adapter/probe/probe.go",
+          "internal/adapter/probe/probe_test.go",
+          "internal/adapter/probe/route_linux.go",
+          "internal/adapter/probe/route_other.go",
+          "internal/adapter/storage/sqlite.go",
+          "internal/adapter/storage/sqlite_test.go",
+          "internal/adapter/tray/tray.go",
+          "internal/app/engine.go",
+          "internal/app/engine_test.go",
+          "internal/domain/classify.go",
+          "internal/domain/classify_test.go",
+          "internal/domain/layer.go",
+          "internal/domain/outage.go"
+        ],
+        "diff_hash": "sha256:23a40376fbb35e9aa562805aec8daf77a50b608291a0136abaf8a98c41d7470d",
+        "paths_digest": "sha256:861be68a90d6dc57baa788c31c3e9abeaf57bf43e2e42982823897b698ce4955",
+        "authored_lines": 1565,
+        "original_changed_lines": 1565
+      },
+      "lenses": {
+        "trust": {
+          "selected": true,
+          "status": "completed",
+          "request_id": "m1-walking-skeleton:lens-start:1:0",
+          "result_digest": "sha256:9ae506b3369c1f8fe8954abc018c972614b71184a69e2a40c7a244b75db03ced",
+          "result": {
+            "findings": [
+              {
+                "severity": "WARNING",
+                "summary": "internal/adapter/storage/sqlite.go:40-54. The history file is created with the default mode (0644 minus umask) during migrate(), and only the main file is chmod'ed to 0600 afterwards. The -wal and -shm sidecars are created while the main file is still world-readable and are never chmod'ed. MkdirAll(0o700) does not tighten a directory that already exists. When the data directory is not 0700, other local users can read the outage history during the first run.",
+                "acceptance_criteria": "On first creation of the history, the main file, history.db-wal and history.db-shm are never group- or world-accessible. This holds even when the data directory already exists with mode 0755 and umask is 022. A test covers that case and asserts the mode of the sidecar files while the store is open."
+              }
+            ]
+          },
+          "operation": null,
+          "result_request_id": "m1-walking-skeleton:lens-result:1:1"
+        },
+        "runtime": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        },
+        "evolution": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        },
+        "efficiency": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        }
+      },
+      "findings": [
+        {
+          "id": "F-f1b9225f62059d7f",
+          "owner": "trust",
+          "severity": "WARNING",
+          "summary": "internal/adapter/storage/sqlite.go:40-54. The history file is created with the default mode (0644 minus umask) during migrate(), and only the main file is chmod'ed to 0600 afterwards. The -wal and -shm sidecars are created while the main file is still world-readable and are never chmod'ed. MkdirAll(0o700) does not tighten a directory that already exists. When the data directory is not 0700, other local users can read the outage history during the first run.",
+          "acceptance_criteria": "On first creation of the history, the main file, history.db-wal and history.db-shm are never group- or world-accessible. This holds even when the data directory already exists with mode 0755 and umask is 022. A test covers that case and asserts the mode of the sidecar files while the store is open.",
+          "blocking": false,
+          "resolution": "advisory"
+        }
+      ],
+      "findings_digest": "sha256:292a9981f8a614d2f8d648deb6fe1c09372dbad28bb962a5e483168e8c0ca1e2",
+      "correction_budget": {
+        "limit_lines": 200,
+        "used_lines": 0,
+        "failed_attempts": 0,
+        "max_failed_attempts": 3
+      },
+      "correction_history": [],
+      "validation_history": [],
+      "follow_ups": [],
+      "pending_operation": null,
+      "pending_correction": null,
+      "terminal_reason": "no-unresolved-blocking-findings"
+    },
+    {
+      "schema_version": 2,
+      "lineage_id": "sha256:2147a73095922a818ed9e06ca3297f5f35cfc1a783f6d111b8653111a6c0d997",
+      "generation": 2,
+      "predecessor_lineage_id": "sha256:bb7f14689e2a166b96e120cc7070747aba0e0444cc0f3a0c9aac2c5098b385ef",
+      "migration": null,
+      "recovery": null,
+      "revision": 3,
+      "status": "approved",
+      "genesis": {
+        "candidate": {
+          "projection": "idd-tree-diff/v1",
+          "base_tree": "d90d3ef2d1d48cf7ec13f1592869d7373d24a861",
+          "candidate_tree": "8e885a42d6f6fbb2bcefdc39b7058260119e9df5",
+          "paths": [
+            "cmd/netmon-tray/main.go",
+            "go.mod",
+            "go.sum",
+            "internal/adapter/logging/logging.go",
+            "internal/adapter/probe/probe.go",
+            "internal/adapter/probe/probe_test.go",
+            "internal/adapter/probe/route_linux.go",
+            "internal/adapter/probe/route_other.go",
+            "internal/adapter/storage/sqlite.go",
+            "internal/adapter/storage/sqlite_test.go",
+            "internal/adapter/tray/tray.go",
+            "internal/app/engine.go",
+            "internal/app/engine_test.go",
+            "internal/domain/classify.go",
+            "internal/domain/classify_test.go",
+            "internal/domain/layer.go",
+            "internal/domain/outage.go"
+          ],
+          "diff_hash": "sha256:fc228c72827f8f39880b20778191226089a8266ef819d28851aacd523c99bc7d",
+          "paths_digest": "sha256:861be68a90d6dc57baa788c31c3e9abeaf57bf43e2e42982823897b698ce4955",
+          "authored_lines": 1593,
+          "original_changed_lines": 1593
+        },
+        "candidate_id": "sha256:195dc17094c07da0fb2462eda6e2585000471b8dee83ca98362ace17a2fcca7b",
+        "paths": [
+          "cmd/netmon-tray/main.go",
+          "go.mod",
+          "go.sum",
+          "internal/adapter/logging/logging.go",
+          "internal/adapter/probe/probe.go",
+          "internal/adapter/probe/probe_test.go",
+          "internal/adapter/probe/route_linux.go",
+          "internal/adapter/probe/route_other.go",
+          "internal/adapter/storage/sqlite.go",
+          "internal/adapter/storage/sqlite_test.go",
+          "internal/adapter/tray/tray.go",
+          "internal/app/engine.go",
+          "internal/app/engine_test.go",
+          "internal/domain/classify.go",
+          "internal/domain/classify_test.go",
+          "internal/domain/layer.go",
+          "internal/domain/outage.go"
+        ],
+        "classification": "high-risk",
+        "selected_domains": [
+          "trust"
+        ],
+        "evidence_fingerprint": "8e885a42d6f6fbb2bcefdc39b7058260119e9df5",
+        "original_changed_lines": 1593,
+        "authored_lines": 1593
+      },
+      "current_candidate_id": "sha256:195dc17094c07da0fb2462eda6e2585000471b8dee83ca98362ace17a2fcca7b",
+      "current_candidate": {
+        "projection": "idd-tree-diff/v1",
+        "base_tree": "d90d3ef2d1d48cf7ec13f1592869d7373d24a861",
+        "candidate_tree": "8e885a42d6f6fbb2bcefdc39b7058260119e9df5",
+        "paths": [
+          "cmd/netmon-tray/main.go",
+          "go.mod",
+          "go.sum",
+          "internal/adapter/logging/logging.go",
+          "internal/adapter/probe/probe.go",
+          "internal/adapter/probe/probe_test.go",
+          "internal/adapter/probe/route_linux.go",
+          "internal/adapter/probe/route_other.go",
+          "internal/adapter/storage/sqlite.go",
+          "internal/adapter/storage/sqlite_test.go",
+          "internal/adapter/tray/tray.go",
+          "internal/app/engine.go",
+          "internal/app/engine_test.go",
+          "internal/domain/classify.go",
+          "internal/domain/classify_test.go",
+          "internal/domain/layer.go",
+          "internal/domain/outage.go"
+        ],
+        "diff_hash": "sha256:fc228c72827f8f39880b20778191226089a8266ef819d28851aacd523c99bc7d",
+        "paths_digest": "sha256:861be68a90d6dc57baa788c31c3e9abeaf57bf43e2e42982823897b698ce4955",
+        "authored_lines": 1593,
+        "original_changed_lines": 1593
+      },
+      "lenses": {
+        "trust": {
+          "selected": true,
+          "status": "completed",
+          "request_id": "m1-walking-skeleton:lens-start:2:0",
+          "result_digest": "sha256:f87d9ecec3defda62175c49d1915cfeccf3fa7c97d57c8be767eb41fbd13ec6f",
+          "result": {
+            "findings": [
+              {
+                "severity": "SUGGESTION",
+                "summary": "internal/adapter/probe/probe.go:159-172: ping() returns true on any ICMP echo reply received on its socket. It discards the source address that ReadFrom returns and does not check the echo Seq or payload. A spoofed reply from another host can make a layer look up.",
+                "acceptance_criteria": "A reply counts as success only when its source address equals the probed target IP. A reply from any other source does not make ping() return true. A check on the echo Seq or payload is optional hardening. Checking the source needs only a small change inside ping(). A unit-testable helper is optional."
+              }
+            ]
+          },
+          "operation": null,
+          "result_request_id": "m1-walking-skeleton:lens-result:2:1"
+        },
+        "runtime": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        },
+        "evolution": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        },
+        "efficiency": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        }
+      },
+      "findings": [
+        {
+          "id": "F-616f19c248dea43a",
+          "owner": "trust",
+          "severity": "SUGGESTION",
+          "summary": "internal/adapter/probe/probe.go:159-172: ping() returns true on any ICMP echo reply received on its socket. It discards the source address that ReadFrom returns and does not check the echo Seq or payload. A spoofed reply from another host can make a layer look up.",
+          "acceptance_criteria": "A reply counts as success only when its source address equals the probed target IP. A reply from any other source does not make ping() return true. A check on the echo Seq or payload is optional hardening. Checking the source needs only a small change inside ping(). A unit-testable helper is optional.",
+          "blocking": false,
+          "resolution": "advisory"
+        }
+      ],
+      "findings_digest": "sha256:fb894ee143c6c82d6f45069b145c7bd3399a99842390677db05bf540d4749711",
+      "correction_budget": {
+        "limit_lines": 200,
+        "used_lines": 0,
+        "failed_attempts": 0,
+        "max_failed_attempts": 3
+      },
+      "correction_history": [],
+      "validation_history": [],
+      "follow_ups": [],
+      "pending_operation": null,
+      "pending_correction": null,
+      "terminal_reason": "no-unresolved-blocking-findings"
+    }
+  ],
+  "assumptions": [
+    "Errores: si falla la escritura del historial o no hay barra SNI el motor sigue sondeando, registra el error en el log estructurado y reintenta; línea y operador se agrupan en una sola clase en M1; configuración como constantes por defecto, sin archivo"
+  ],
+  "closed_at": "2026-10-23T19:23:09.064Z"
+}
