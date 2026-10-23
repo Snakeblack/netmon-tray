@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Snakeblack/netmon-tray/internal/adapter/export"
 	"github.com/Snakeblack/netmon-tray/internal/adapter/logging"
 	"github.com/Snakeblack/netmon-tray/internal/adapter/probe"
 	"github.com/Snakeblack/netmon-tray/internal/adapter/storage"
@@ -23,6 +24,7 @@ const (
 	probeInterval = 2 * time.Second
 	failThreshold = 3
 	mergeGap      = 10 * time.Second
+	retention     = 60 * 24 * time.Hour
 )
 
 func main() {
@@ -49,11 +51,24 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	t := tray.New()
 	tracker := domain.NewTracker(domain.TrackerConfig{FailThreshold: failThreshold, MergeGap: mergeGap})
-	engine := app.NewEngine(prober, store, t, tracker, probeInterval, log)
+	exporter := export.New(filepath.Join(filepath.Dir(historyPath), "exports"))
+	// The engine needs the tray as its sink and the tray needs the engine to
+	// export, so the tray calls through a closure bound once the engine exists.
+	var engine *app.Engine
+	t := tray.New(func(ctx context.Context) ([]string, error) {
+		paths, err := engine.Export(ctx)
+		if err != nil {
+			log.Error("export history", "err", err)
+			return nil, err
+		}
+		log.Info("history exported", "files", paths)
+		return paths, nil
+	})
+	engine = app.NewEngine(prober, store, t, tracker, probeInterval, log,
+		app.WithRetention(retention), app.WithExporter(exporter))
 
-	log.Info("netmon-tray started", "history", historyPath, "interval", probeInterval)
+	log.Info("netmon-tray started", "history", historyPath, "interval", probeInterval, "retention", retention)
 	t.Run(ctx, cancel, func(ctx context.Context) {
 		if err := engine.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Error("engine stopped", "err", err)

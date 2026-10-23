@@ -8,6 +8,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"path/filepath"
 	"time"
 
 	"fyne.io/systray"
@@ -27,19 +28,25 @@ var (
 
 // Tray implements app.Sink.
 type Tray struct {
-	icons   map[domain.State][]byte
-	status  *systray.MenuItem
-	lastOne *systray.MenuItem
+	icons    map[domain.State][]byte
+	export   func(context.Context) ([]string, error)
+	status   *systray.MenuItem
+	lastOne  *systray.MenuItem
+	exported *systray.MenuItem
 }
 
-// New renders the four state icons.
-func New() *Tray {
-	return &Tray{icons: map[domain.State][]byte{
-		domain.StateUp:       renderIcon(colorUp),
-		domain.StateDegraded: renderIcon(colorDegraded),
-		domain.StateDown:     renderIcon(colorDown),
-		domain.StateUnknown:  renderIcon(colorUnknown),
-	}}
+// New renders the four state icons. export runs when the user picks
+// "Exportar historial" and returns the files it wrote.
+func New(export func(context.Context) ([]string, error)) *Tray {
+	return &Tray{
+		export: export,
+		icons: map[domain.State][]byte{
+			domain.StateUp:       renderIcon(colorUp),
+			domain.StateDegraded: renderIcon(colorDegraded),
+			domain.StateDown:     renderIcon(colorDown),
+			domain.StateUnknown:  renderIcon(colorUnknown),
+		},
+	}
 }
 
 // Run shows the icon and blocks until ctx is cancelled or the user picks
@@ -55,9 +62,24 @@ func (t *Tray) Run(ctx context.Context, cancel context.CancelFunc, start func(ct
 		t.lastOne = systray.AddMenuItem("Sin cortes registrados", "")
 		t.lastOne.Disable()
 		systray.AddSeparator()
+		exportItem := systray.AddMenuItem("Exportar historial", "Guarda el historial en CSV y JSON")
+		t.exported = systray.AddMenuItem("", "")
+		t.exported.Disable()
+		t.exported.Hide()
+		systray.AddSeparator()
 		quit := systray.AddMenuItem("Salir", "Cierra netmon-tray")
 
 		go start(ctx)
+		go func() {
+			for {
+				select {
+				case <-exportItem.ClickedCh:
+					t.showExport(ctx)
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
 		go func() {
 			select {
 			case <-quit.ClickedCh:
@@ -84,6 +106,20 @@ func (t *Tray) Publish(s app.Status) {
 	systray.SetTooltip("netmon-tray: " + text)
 	t.status.SetTitle(text)
 	t.lastOne.SetTitle(LastOutageText(s.Last))
+}
+
+// showExport runs the export and tells the user where the files went.
+func (t *Tray) showExport(ctx context.Context) {
+	paths, err := t.export(ctx)
+	switch {
+	case err != nil:
+		t.exported.SetTitle("Error al exportar: " + err.Error())
+	case len(paths) == 0:
+		t.exported.SetTitle("No se escribió ningún archivo")
+	default:
+		t.exported.SetTitle("Exportado en " + filepath.Dir(paths[0]))
+	}
+	t.exported.Show()
 }
 
 // StateText is the Spanish description of the current status.
