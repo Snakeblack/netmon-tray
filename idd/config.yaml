@@ -1,0 +1,12 @@
+checks:
+  test: go test ./...
+  vet: go vet ./...
+team:
+  size: solo
+  experience: senior
+impact:
+  persistent_data:
+    - internal/adapter/storage/**
+  security_boundary:
+    - internal/adapter/control/**
+    - internal/adapter/probe/**
