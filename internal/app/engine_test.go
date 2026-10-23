@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -232,5 +233,53 @@ func TestEngineExportWithoutExporterFails(t *testing.T) {
 
 	if _, err := e.Export(context.Background()); err == nil {
 		t.Fatal("Export() error = nil, want an error when no exporter is configured")
+	}
+}
+
+// slowExporter reports how many Write calls ran at once.
+type slowExporter struct {
+	mu         sync.Mutex
+	running    int
+	maxRunning int
+	release    chan struct{}
+	entered    chan struct{}
+}
+
+func (s *slowExporter) Write([]domain.Outage) ([]string, error) {
+	s.mu.Lock()
+	s.running++
+	if s.running > s.maxRunning {
+		s.maxRunning = s.running
+	}
+	s.mu.Unlock()
+	s.entered <- struct{}{}
+	<-s.release
+	s.mu.Lock()
+	s.running--
+	s.mu.Unlock()
+	return []string{"/exports/h.csv"}, nil
+}
+
+func TestEngineExportsTakeTurns(t *testing.T) {
+	exporter := &slowExporter{release: make(chan struct{}), entered: make(chan struct{}, 2)}
+	e := newEngine(&scriptedProber{}, &memStore{saved: map[int64]domain.Outage{}}, &captureSink{}, WithExporter(exporter))
+
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			e.Export(context.Background())
+		}()
+	}
+	<-exporter.entered
+	time.Sleep(50 * time.Millisecond) // time for a second export to overlap, if it could
+	exporter.release <- struct{}{}
+	<-exporter.entered
+	exporter.release <- struct{}{}
+	wg.Wait()
+
+	if exporter.maxRunning != 1 {
+		t.Fatalf("%d exports wrote at the same time, want them one after another", exporter.maxRunning)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/Snakeblack/netmon-tray/internal/domain"
@@ -54,6 +55,7 @@ type Engine struct {
 
 	retention time.Duration // zero keeps the history forever
 	exporter  Exporter
+	exportMu  sync.Mutex // the tray and ctl may export at the same time
 	now       func() time.Time
 
 	state     domain.State
@@ -112,8 +114,10 @@ func (e *Engine) Run(ctx context.Context) error {
 }
 
 // Export writes the stored history to files and returns their paths. It is
-// safe to call while the engine runs.
+// safe to call while the engine runs; concurrent calls take turns.
 func (e *Engine) Export(ctx context.Context) ([]string, error) {
+	e.exportMu.Lock()
+	defer e.exportMu.Unlock()
 	if e.exporter == nil {
 		return nil, errors.New("export is not configured")
 	}
