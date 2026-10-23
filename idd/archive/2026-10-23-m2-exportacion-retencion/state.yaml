@@ -1,0 +1,375 @@
+{
+  "schema": "idd-state/v1",
+  "change": "m2-exportacion-retencion",
+  "mode": "idd",
+  "status": "closed",
+  "intent": {
+    "request": "M2 — Exportación y retención: exportar a CSV/JSON, rotación a 60 días y migración de esquema",
+    "kind": "feature",
+    "summary": "Exportar el historial a CSV/JSON desde la bandeja, purgar cortes de más de 60 días y migrar el esquema a la versión 2",
+    "acceptance": "El ítem Exportar… del menú escribe netmon-historial-<fecha>.csv y .json en exports/ con todos los cortes; el motor descarta los cortes cerrados hace más de 60 días al arrancar y cada 24 h; un archivo v1 abre y migra a v2 sin perder cortes"
+  },
+  "facts": {
+    "coverage": [
+      {
+        "category": "inputs",
+        "cite": {
+          "kind": "request",
+          "text": "exportar a CSV/JSON"
+        }
+      },
+      {
+        "category": "uniqueness",
+        "cite": {
+          "kind": "path",
+          "path": "internal/domain/outage.go",
+          "line": 6
+        }
+      },
+      {
+        "category": "persistence",
+        "question": "¿Desde qué instante cuentan los 60 días, cuándo se purga y se borran los cortes abiertos?"
+      },
+      {
+        "category": "copy",
+        "question": "¿Destino, nombres de archivo, columnas y formato de horas de la exportación?"
+      },
+      {
+        "category": "url-state",
+        "cite": {
+          "kind": "path",
+          "path": "docs/architecture/knowledge-map.yaml",
+          "line": 175
+        }
+      },
+      {
+        "category": "accessibility",
+        "cite": {
+          "kind": "path",
+          "path": "internal/adapter/tray/tray.go",
+          "line": 58
+        }
+      },
+      {
+        "category": "errors",
+        "cite": {
+          "kind": "path",
+          "path": "internal/app/engine.go",
+          "line": 58
+        }
+      }
+    ]
+  },
+  "plan": {
+    "paths": [
+      "cmd/netmon-tray/history_test.go",
+      "cmd/netmon-tray/main.go",
+      "docs/roadmap.md",
+      "internal/adapter/export/export.go",
+      "internal/adapter/export/export_test.go",
+      "internal/adapter/storage/sqlite.go",
+      "internal/adapter/storage/sqlite_test.go",
+      "internal/adapter/tray/tray.go",
+      "internal/app/engine.go",
+      "internal/app/engine_test.go"
+    ],
+    "work_units": 4,
+    "decision": true,
+    "operations": []
+  },
+  "signals": [
+    {
+      "id": "always",
+      "reason": "every change with a resolved intent",
+      "source": "declaration"
+    },
+    {
+      "id": "multi-unit-or-decision",
+      "reason": "declared 4 work units",
+      "source": "declaration"
+    },
+    {
+      "id": "persistent-data",
+      "reason": "persistent data: touches internal/adapter/storage/sqlite.go and 1 more (matches internal/adapter/storage/**)",
+      "source": "declaration"
+    },
+    {
+      "id": "adr-or-quality-attribute",
+      "reason": "declared ADR 0001, 0002, 0003 and quality scenario durable-history",
+      "source": "declaration"
+    }
+  ],
+  "impacts": [
+    {
+      "kind": "adr",
+      "id": "0001",
+      "impact": "conforms",
+      "reason": "El motor sigue siendo un proceso único: purga, exportación y menú de bandeja viven en el mismo binario, sin puerto ni segundo proceso."
+    },
+    {
+      "kind": "adr",
+      "id": "0002",
+      "impact": "conforms",
+      "reason": "Dominio sin cambios; el formato CSV/JSON y el almacén son adaptadores; app solo define los puertos Store.List/Purge y Exporter."
+    },
+    {
+      "kind": "adr",
+      "id": "0003",
+      "impact": "conforms",
+      "reason": "Solo el motor lee/escribe el historial; migra a v2 al abrir con prueba; descarta cortes cerrados hace más de 60 días; la exportación es una lectura del almacén vía engine.Export."
+    },
+    {
+      "kind": "scenario",
+      "id": "durable-history",
+      "impact": "conforms",
+      "reason": "history_test.go reabre el almacén tras reinicio, comprueba la rotación a 60 días y la exportación; sqlite_test.go cubre la migración v1→v2."
+    }
+  ],
+  "attestations": [
+    {
+      "kind": "adr",
+      "id": "0001",
+      "evidence": "Un único main arranca motor, bandeja y exportación; el clic de Exportar llama a engine.Export en una goroutine de la bandeja (E/S de disco, sin red) y el motor sigue sondeando en la suya.",
+      "recorded_at": "2026-10-23T19:50:51.299Z"
+    },
+    {
+      "kind": "adr",
+      "id": "0003",
+      "evidence": "cmd/netmon-tray/history_test.go reabre el almacén tras reinicio, purga a 60 días y exporta; sqlite_test.go migra un v1 real a v2; todo en verde en ospec check.",
+      "recorded_at": "2026-10-23T19:50:51.355Z"
+    },
+    {
+      "kind": "scenario",
+      "id": "durable-history",
+      "evidence": "Mismas pruebas: history_test.go (reinicio, rotación 60 días, exportación) y TestOpenMigratesV1HistoryKeepingItsOutages (migración).",
+      "recorded_at": "2026-10-23T19:50:51.412Z"
+    }
+  ],
+  "obligations": [
+    {
+      "id": "checks-pass",
+      "signal": "always",
+      "status": "satisfied",
+      "evidence": [
+        "ev-5"
+      ]
+    },
+    {
+      "id": "living-doc",
+      "signal": "multi-unit-or-decision",
+      "status": "satisfied",
+      "evidence": [
+        "ev-7"
+      ]
+    },
+    {
+      "id": "migration-compat-and-test",
+      "signal": "persistent-data",
+      "status": "satisfied",
+      "evidence": [
+        "ev-4"
+      ]
+    },
+    {
+      "id": "adr-impact-declaration",
+      "signal": "adr-or-quality-attribute",
+      "status": "satisfied",
+      "evidence": [
+        "ev-6"
+      ]
+    }
+  ],
+  "gates": [
+    {
+      "id": "open-facts",
+      "status": "resolved",
+      "answer": "todas las recomendadas: ítem Exportar… en la bandeja; ~/.local/share/netmon-tray/exports/netmon-historial-<fecha>.{csv,json} a la vez; columnas inicio,fin,duracion_s,causa,abierto; RFC3339 hora local con desfase; abierto = fin vacío y abierto=true; 60 días desde el fin del corte, abiertos nunca se borran, purga al abrir y cada 24 h; migración v2 con índice sobre ended_at; ping() e icono Omarchy fuera de M2",
+      "source": "user"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "ev-1",
+      "kind": "migration-test",
+      "obligation": "migration-compat-and-test",
+      "recorded_at": "2026-10-23T19:48:51.108Z",
+      "detail": {
+        "run": "run-2",
+        "tree": "sha256:1295bbc696f7c4375ecff252c98142255b5a88db04d7ecf17afc49a232d73b7f",
+        "plan": "La v2 solo añade un índice sin tocar filas; migra en una transacción con rollback si falla; un binario v1 rechaza un archivo v2 con error de esquema más nuevo; la exportación CSV/JSON es la copia previa."
+      }
+    },
+    {
+      "id": "ev-2",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-23T19:50:43.795Z",
+      "detail": {
+        "tree": "sha256:03e9200e62f8c63942c59a64689c665a2b285ae317989e9b762ebec5ab710953",
+        "runs": [
+          "run-3",
+          "run-4"
+        ]
+      }
+    },
+    {
+      "id": "ev-3",
+      "kind": "adr-impact-declaration",
+      "obligation": "adr-impact-declaration",
+      "recorded_at": "2026-10-23T19:50:43.795Z",
+      "detail": {
+        "refs": [
+          "adr:0001 conforms",
+          "adr:0002 conforms",
+          "adr:0003 conforms",
+          "scenario:durable-history conforms"
+        ],
+        "records": [],
+        "tree": "sha256:03e9200e62f8c63942c59a64689c665a2b285ae317989e9b762ebec5ab710953",
+        "fitness": [
+          "run-5"
+        ]
+      }
+    },
+    {
+      "id": "ev-4",
+      "kind": "migration-test",
+      "obligation": "migration-compat-and-test",
+      "recorded_at": "2026-10-23T19:50:51.237Z",
+      "detail": {
+        "run": "run-6",
+        "tree": "sha256:943a2d98c2249693f897722253a153be8a859f7fe3e85bfedbc8b6d42b181fc2",
+        "plan": "La v2 solo añade un índice sin tocar filas; migra en una transacción con rollback si falla; un binario v1 rechaza un archivo v2 con error de esquema más nuevo; la exportación CSV/JSON es la copia previa."
+      }
+    },
+    {
+      "id": "ev-5",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-23T19:50:51.672Z",
+      "detail": {
+        "tree": "sha256:03e9200e62f8c63942c59a64689c665a2b285ae317989e9b762ebec5ab710953",
+        "runs": [
+          "run-7",
+          "run-8"
+        ]
+      }
+    },
+    {
+      "id": "ev-6",
+      "kind": "adr-impact-declaration",
+      "obligation": "adr-impact-declaration",
+      "recorded_at": "2026-10-23T19:50:51.672Z",
+      "detail": {
+        "refs": [
+          "adr:0001 conforms",
+          "adr:0002 conforms",
+          "adr:0003 conforms",
+          "scenario:durable-history conforms"
+        ],
+        "records": [],
+        "tree": "sha256:03e9200e62f8c63942c59a64689c665a2b285ae317989e9b762ebec5ab710953",
+        "fitness": [
+          "run-9"
+        ]
+      }
+    },
+    {
+      "id": "ev-7",
+      "kind": "living-doc-current",
+      "obligation": "living-doc",
+      "recorded_at": "2026-10-23T19:50:59.263Z"
+    }
+  ],
+  "base": "56360cbe7ffa8604bef70ebcba270c8d61811201",
+  "runs": [
+    {
+      "id": "run-1",
+      "purpose": "migration-test",
+      "command": "go test ./internal/adapter/storage/ -run 'TestOpenMigrates|TestList|TestPurge'",
+      "exit_code": 1,
+      "output_sha256": "sha256:28ed339c534ddb5fc98f0bcfc957faf6123c21a2b46a1aca6d546f4816dc33c8",
+      "tree": "sha256:7337f09dc767cf6392e88fe30e57c49306c2066dc3ff0732e146664d31ff62a4",
+      "recorded_at": "2026-10-23T19:48:39.004Z"
+    },
+    {
+      "id": "run-2",
+      "purpose": "migration-test",
+      "command": "go test ./internal/adapter/storage/ -run 'TestOpenMigrates|TestList|TestPurge'",
+      "exit_code": 0,
+      "output_sha256": "sha256:910c24ef9eddae6236b51ad25ef4af9cf315e619274bdedb91fb368f360901ea",
+      "tree": "sha256:1295bbc696f7c4375ecff252c98142255b5a88db04d7ecf17afc49a232d73b7f",
+      "recorded_at": "2026-10-23T19:48:51.108Z"
+    },
+    {
+      "id": "run-3",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:91d5d3b885c45303cc3260ca96cb52ede3ea400c7dea2088984602d6f432903f",
+      "tree": "sha256:03e9200e62f8c63942c59a64689c665a2b285ae317989e9b762ebec5ab710953",
+      "recorded_at": "2026-10-23T19:50:43.795Z"
+    },
+    {
+      "id": "run-4",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:03e9200e62f8c63942c59a64689c665a2b285ae317989e9b762ebec5ab710953",
+      "recorded_at": "2026-10-23T19:50:43.795Z"
+    },
+    {
+      "id": "run-5",
+      "purpose": "fitness",
+      "ref": "adr:0002",
+      "command": "! go list -deps ./internal/domain/... | grep -E 'internal/adapter|dbus|systemd'",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:03e9200e62f8c63942c59a64689c665a2b285ae317989e9b762ebec5ab710953",
+      "recorded_at": "2026-10-23T19:50:43.795Z"
+    },
+    {
+      "id": "run-6",
+      "purpose": "migration-test",
+      "command": "go test ./internal/adapter/storage/ ./cmd/... -run 'TestOpenMigrates|TestList|TestPurge|TestHistory'",
+      "exit_code": 0,
+      "output_sha256": "sha256:787fc5032e2498c95e267957883deeb5d2670cb323710a1e89050fde8c536b18",
+      "tree": "sha256:943a2d98c2249693f897722253a153be8a859f7fe3e85bfedbc8b6d42b181fc2",
+      "recorded_at": "2026-10-23T19:50:51.237Z"
+    },
+    {
+      "id": "run-7",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:91d5d3b885c45303cc3260ca96cb52ede3ea400c7dea2088984602d6f432903f",
+      "tree": "sha256:03e9200e62f8c63942c59a64689c665a2b285ae317989e9b762ebec5ab710953",
+      "recorded_at": "2026-10-23T19:50:51.672Z"
+    },
+    {
+      "id": "run-8",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:03e9200e62f8c63942c59a64689c665a2b285ae317989e9b762ebec5ab710953",
+      "recorded_at": "2026-10-23T19:50:51.672Z"
+    },
+    {
+      "id": "run-9",
+      "purpose": "fitness",
+      "ref": "adr:0002",
+      "command": "! go list -deps ./internal/domain/... | grep -E 'internal/adapter|dbus|systemd'",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:03e9200e62f8c63942c59a64689c665a2b285ae317989e9b762ebec5ab710953",
+      "recorded_at": "2026-10-23T19:50:51.672Z"
+    }
+  ],
+  "closed_at": "2026-10-23T19:50:59.263Z"
+}
