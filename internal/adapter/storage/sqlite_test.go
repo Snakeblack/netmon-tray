@@ -186,3 +186,89 @@ func TestHistoryIsPrivateEvenInALooseExistingDirectory(t *testing.T) {
 		t.Errorf("directory permissions = %o, want 700", perm)
 	}
 }
+
+func TestOpenMigratesV1HistoryKeepingItsOutages(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.db")
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the schema and one outage exactly as version 1 left them
+	for _, stmt := range []string{
+		migrations[0],
+		`INSERT INTO outages (id, started_at, ended_at, last_seen, cause) VALUES (7, 1000, 9000, 9000, 'router')`,
+		`PRAGMA user_version = 1`,
+	} {
+		if _, err := raw.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw.Close()
+
+	s := open(t, path)
+
+	var version int
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != 2 {
+		t.Fatalf("schema version = %d (%v), want 2", version, err)
+	}
+	var indexes int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_outages_ended'`).Scan(&indexes); err != nil || indexes != 1 {
+		t.Fatalf("idx_outages_ended count = %d (%v), want 1", indexes, err)
+	}
+	got, err := s.List(context.Background())
+	if err != nil || len(got) != 1 || got[0].ID != 7 || got[0].Cause != domain.CauseRouter {
+		t.Fatalf("List() = (%+v, %v), want the v1 outage intact", got, err)
+	}
+}
+
+func TestListReturnsEveryOutageOldestFirst(t *testing.T) {
+	ctx := context.Background()
+	s := open(t, filepath.Join(t.TempDir(), "history.db"))
+
+	got, err := s.List(ctx)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("List() on empty history = (%+v, %v), want none", got, err)
+	}
+
+	s.Save(ctx, outage(200, 210, domain.CauseLine))
+	s.Save(ctx, outage(0, 10, domain.CauseLink))
+	s.Save(ctx, outage(100, 0, domain.CauseRouter)) // still open
+
+	got, err = s.List(ctx)
+	if err != nil || len(got) != 3 {
+		t.Fatalf("List() = (%+v, %v), want 3 outages", got, err)
+	}
+	wantCauses := []domain.Cause{domain.CauseLink, domain.CauseRouter, domain.CauseLine}
+	for i, want := range wantCauses {
+		if got[i].Cause != want {
+			t.Fatalf("List()[%d].Cause = %q, want %q (oldest first)", i, got[i].Cause, want)
+		}
+	}
+	if !got[1].Open() {
+		t.Fatalf("List()[1] = %+v, want the open outage to stay open", got[1])
+	}
+}
+
+func TestPurgeDropsOnlyOutagesThatEndedBeforeTheCutoff(t *testing.T) {
+	ctx := context.Background()
+	s := open(t, filepath.Join(t.TempDir(), "history.db"))
+	s.Save(ctx, outage(0, 10, domain.CauseLink))      // ended long before the cutoff
+	s.Save(ctx, outage(1000, 1100, domain.CauseLine)) // ended exactly at the cutoff
+	s.Save(ctx, outage(2000, 2010, domain.CauseRouter))
+	s.Save(ctx, outage(-5000, 0, domain.CauseLine)) // started before the cutoff, still open
+
+	removed, err := s.Purge(ctx, base.Add(1100*time.Second))
+	if err != nil || removed != 1 {
+		t.Fatalf("Purge() = (%d, %v), want 1 removed", removed, err)
+	}
+
+	got, _ := s.List(ctx)
+	if len(got) != 3 {
+		t.Fatalf("List() after Purge = %+v, want 3 outages", got)
+	}
+	for _, o := range got {
+		if o.Cause == domain.CauseLink {
+			t.Fatalf("outage that ended before the cutoff survived: %+v", o)
+		}
+	}
+}
