@@ -1,0 +1,300 @@
+{
+  "schema": "ospec-knowledge-map/v2",
+  "profile": "internal-tool",
+  "slots": [
+    {
+      "id": "business.problem",
+      "dimension": "business",
+      "state": "confirmed",
+      "decisions": [
+        "system-boundaries"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "Cortes cortos e inexplicados de internet: no se sabe si fallan wifi, router, línea u operador y se necesitan pruebas para reclamar al operador"
+      }
+    },
+    {
+      "id": "business.goals",
+      "dimension": "business",
+      "state": "confirmed",
+      "decisions": [
+        "test-strategy"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "Detectar y clasificar cortes de pocos segundos, conservar 2 meses exportables y no afectar a juegos ni a la conexión; sin cifras de CPU/RAM hasta que el usuario las confirme"
+      }
+    },
+    {
+      "id": "business.constraints",
+      "dimension": "business",
+      "state": "confirmed",
+      "decisions": [
+        "trust-boundaries",
+        "technology-choice"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "Dedicado casi por completo a Omarchy como panel propio, igual que alexa-tray; debe funcionar también en Windows con las mismas funciones aunque no con la misma presentación. Sin root ni telemetría no confirmados aún"
+      }
+    },
+    {
+      "id": "functional.actors",
+      "dimension": "functional",
+      "state": "confirmed",
+      "decisions": [
+        "system-boundaries"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "El propio usuario y otros usuarios de escritorio de Omarchy/Windows; sin multiusuario ni administración remota"
+      }
+    },
+    {
+      "id": "functional.capabilities",
+      "dimension": "functional",
+      "state": "confirmed",
+      "decisions": [
+        "system-boundaries"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "Detectar, clasificar (wifi, router, línea, operador), registrar 2 meses y exportar CSV/JSON; icono de bandeja y panel con el último corte"
+      }
+    },
+    {
+      "id": "functional.exclusions",
+      "dimension": "functional",
+      "state": "confirmed",
+      "decisions": [
+        "system-boundaries"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "Sin test de velocidad, sin nube, sin alertas externas; todo local"
+      }
+    },
+    {
+      "id": "team.shape",
+      "dimension": "team",
+      "state": "confirmed",
+      "decisions": [
+        "deployment-topology",
+        "technology-choice"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "Desarrollo y mantenimiento por una sola persona con experiencia (perfil senior), igual que alexa-tray"
+      }
+    },
+    {
+      "id": "team.production-owner",
+      "dimension": "team",
+      "state": "confirmed",
+      "decisions": [
+        "operability"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "El propio usuario lo usa y opera en su PC (Linux con Omarchy) y lo publica en GitHub público (Snakeblack/netmon-tray) para que otros usuarios de Omarchy lo instalen"
+      }
+    },
+    {
+      "id": "quality.drivers",
+      "dimension": "quality",
+      "state": "confirmed",
+      "decisions": [
+        "system-boundaries",
+        "deployment-topology"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "Prioridades elegidas por el usuario (las cuatro): 1) consumo mínimo, sin afectar a juegos ni a la conexión (poca CPU/RAM, tráfico casi nulo); 2) detección fiable de cortes de pocos segundos, clasificando dónde fallan (wifi, router, línea, red del operador); 3) pruebas para el operador: historial de 2 meses exportable que sobreviva a reinicios; 4) panel e icono siempre al día con el estado real, como alexa-tray"
+      }
+    },
+    {
+      "id": "architecture.boundaries",
+      "dimension": "architecture",
+      "state": "confirmed",
+      "decisions": [
+        "system-boundaries",
+        "integration-style"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "Un solo proceso local: sondeo, clasificación, historial e icono de bandeja en un binario, como alexa-tray (ADR 0001)"
+      }
+    },
+    {
+      "id": "architecture.data",
+      "dimension": "architecture",
+      "state": "confirmed",
+      "decisions": [
+        "data-ownership"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "Historial de 2 meses en archivo local bajo ~/.local/share, un único propietario (el proceso), rotación a 60 días y exportable"
+      }
+    },
+    {
+      "id": "architecture.integration",
+      "dimension": "architecture",
+      "state": "confirmed",
+      "decisions": [
+        "integration-style",
+        "contract-evolution"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "Sondas activas ligeras (ICMP/DNS/TCP) a pocos objetivos más estado del enlace local; icono por StatusNotifierItem como alexa-tray"
+      }
+    },
+    {
+      "id": "architecture.deployment",
+      "dimension": "architecture",
+      "state": "confirmed",
+      "decisions": [
+        "deployment-topology"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "Binario Go estático publicado en GitHub (Snakeblack/netmon-tray) con servicio systemd --user e integración Omarchy como alexa-tray"
+      }
+    },
+    {
+      "id": "architecture.trust",
+      "dimension": "architecture",
+      "state": "confirmed",
+      "decisions": [
+        "trust-boundaries"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "Usuario normal sin root ni telemetría; historial legible solo por el usuario; sin puerto de escucha en red; solo paquetes salientes de las sondas"
+      }
+    },
+    {
+      "id": "technology.stack",
+      "dimension": "technology",
+      "state": "confirmed",
+      "decisions": [
+        "technology-choice"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "Go con arquitectura hexagonal como alexa-tray; núcleo portable y adaptadores por SO"
+      }
+    },
+    {
+      "id": "technology.licenses",
+      "dimension": "technology",
+      "state": "confirmed",
+      "decisions": [
+        "technology-choice"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "Licencia MIT; solo dependencias permisivas"
+      }
+    },
+    {
+      "id": "operation.observability",
+      "dimension": "operation",
+      "state": "confirmed",
+      "decisions": [
+        "operability"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "Logs locales estructurados como alexa-tray (ADR 0004); sin métricas ni trazas externas"
+      }
+    },
+    {
+      "id": "operation.backup",
+      "dimension": "operation",
+      "state": "confirmed",
+      "decisions": [
+        "data-ownership",
+        "operability"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "Sin copia automática; la exportación CSV/JSON es la copia manual"
+      }
+    },
+    {
+      "id": "delivery.environments",
+      "dimension": "delivery",
+      "state": "confirmed",
+      "decisions": [
+        "delivery-target",
+        "deployment-topology"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "Desarrollo y pruebas en local (Linux con Omarchy), CI en GitHub Actions y binarios en GitHub Releases; sin staging"
+      }
+    },
+    {
+      "id": "delivery.versioning",
+      "dimension": "delivery",
+      "state": "confirmed",
+      "decisions": [
+        "contract-evolution",
+        "delivery-target"
+      ],
+      "source": {
+        "kind": "user",
+        "ref": "SemVer con etiquetas vX.Y.Z; el archivo de historial lleva versión de esquema y migra al abrir"
+      }
+    }
+  ],
+  "quality_scenarios": [
+    {
+      "id": "minimal-footprint",
+      "origin": "Usuario jugando o usando la conexión en su escritorio",
+      "stimulus": "El motor permanece en ejecución continua mientras se juega o se usa la red",
+      "environment": "Operación normal en sesión gráfica, con la conexión en uso intensivo",
+      "artifact": "Motor de sondeo en proceso único",
+      "response": "Consume poca CPU y RAM y genera tráfico de sondeo casi nulo, sin degradar los juegos ni la conexión",
+      "fitness": {
+        "description": "Revisión de que el ciclo de sondeo usa intervalos fijos y cargas mínimas, y medición manual de CPU/RAM y bytes por sondeo al cerrar el primer slice (sin umbral numérico hasta que el usuario lo confirme)"
+      }
+    },
+    {
+      "id": "short-outage-detection",
+      "origin": "Red doméstica con cortes de pocos segundos",
+      "stimulus": "La conectividad cae unos segundos y vuelve",
+      "environment": "Operación normal con wifi, router, línea y red del operador como posibles puntos de fallo",
+      "artifact": "Sondas por capas y clasificador de cortes",
+      "response": "Detecta el corte, lo registra con su inicio y duración y lo clasifica según la capa que falla (wifi, router, línea u operador)",
+      "fitness": {
+        "description": "Pruebas unitarias del clasificador con secuencias simuladas de resultados de sondas por capa, incluido un corte de pocos segundos"
+      }
+    },
+    {
+      "id": "durable-history",
+      "origin": "Usuario que reclama al operador",
+      "stimulus": "Reinicio del equipo o del motor, o petición de exportar pruebas",
+      "environment": "Uso continuo durante 2 meses",
+      "artifact": "Almacén local de historial",
+      "response": "Conserva el historial de 2 meses entre reinicios, migra el esquema al actualizar y lo exporta a CSV/JSON",
+      "fitness": {
+        "description": "Prueba de integración que reabre el almacén tras reinicio y tras migración de esquema, y comprueba la rotación a 60 días y la exportación"
+      }
+    },
+    {
+      "id": "live-status",
+      "origin": "Usuario mirando el icono o el panel",
+      "stimulus": "El estado de la red cambia",
+      "environment": "Operación normal en Omarchy (y Windows con otra presentación)",
+      "artifact": "Motor, contrato de control y adaptadores de icono y panel",
+      "response": "El icono y el panel reflejan el estado real sin bloquear la interfaz",
+      "fitness": {
+        "description": "Prueba de que el motor emite el cambio de estado por el contrato de control y de que ningún manejador de interfaz realiza E/S de red síncrona"
+      }
+    }
+  ]
+}
