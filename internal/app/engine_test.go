@@ -25,9 +25,12 @@ func (p *scriptedProber) Probe(context.Context) domain.Sample {
 }
 
 type memStore struct {
-	saved   map[int64]domain.Outage
-	failing bool
-	last    *domain.Outage
+	saved    map[int64]domain.Outage
+	failing  bool
+	last     *domain.Outage
+	listed   []domain.Outage
+	purgedAt []time.Time
+	purgeErr error
 }
 
 func (s *memStore) Save(_ context.Context, o domain.Outage) error {
@@ -40,6 +43,23 @@ func (s *memStore) Save(_ context.Context, o domain.Outage) error {
 
 func (s *memStore) Last(context.Context) (*domain.Outage, error) { return s.last, nil }
 
+func (s *memStore) List(context.Context) ([]domain.Outage, error) { return s.listed, nil }
+
+func (s *memStore) Purge(_ context.Context, before time.Time) (int64, error) {
+	s.purgedAt = append(s.purgedAt, before)
+	return 0, s.purgeErr
+}
+
+type captureExporter struct {
+	written [][]domain.Outage
+	err     error
+}
+
+func (c *captureExporter) Write(o []domain.Outage) ([]string, error) {
+	c.written = append(c.written, o)
+	return []string{"/exports/netmon-historial.csv", "/exports/netmon-historial.json"}, c.err
+}
+
 type captureSink struct{ statuses []Status }
 
 func (c *captureSink) Publish(s Status) { c.statuses = append(c.statuses, s) }
@@ -48,10 +68,18 @@ func sample(sec int, internet bool) domain.Sample {
 	return domain.Sample{At: t0.Add(time.Duration(sec) * time.Second), Link: true, Router: true, Internet: internet, DNS: internet}
 }
 
-func newEngine(p Prober, s Store, sink Sink) *Engine {
+func newEngine(p Prober, s Store, sink Sink, opts ...Option) *Engine {
 	tracker := domain.NewTracker(domain.TrackerConfig{FailThreshold: 3, MergeGap: 10 * time.Second})
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewEngine(p, s, sink, tracker, 2*time.Second, log)
+	e := NewEngine(p, s, sink, tracker, 2*time.Second, log, opts...)
+	e.now = func() time.Time { return t0 }
+	return e
+}
+
+func cancelledContext() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
 }
 
 func TestEngineStoresOutageAndPublishesStatus(t *testing.T) {
@@ -130,5 +158,79 @@ func TestEngineRunStartsFromLastStoredOutage(t *testing.T) {
 	}
 	if e.last != stored {
 		t.Fatalf("engine last outage = %+v, want the stored one", e.last)
+	}
+}
+
+func TestEnginePurgesOutagesOlderThanTheRetentionOnStart(t *testing.T) {
+	store := &memStore{saved: map[int64]domain.Outage{}}
+	e := newEngine(&scriptedProber{samples: []domain.Sample{sample(0, true)}}, store, &captureSink{}, WithRetention(60*24*time.Hour))
+
+	if err := e.Run(cancelledContext()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() = %v, want context.Canceled", err)
+	}
+	want := t0.Add(-60 * 24 * time.Hour)
+	if len(store.purgedAt) != 1 || !store.purgedAt[0].Equal(want) {
+		t.Fatalf("purged before %v, want exactly once before %v", store.purgedAt, want)
+	}
+}
+
+func TestEngineWithoutRetentionNeverPurges(t *testing.T) {
+	store := &memStore{saved: map[int64]domain.Outage{}}
+	e := newEngine(&scriptedProber{samples: []domain.Sample{sample(0, true)}}, store, &captureSink{})
+
+	e.Run(cancelledContext())
+	if len(store.purgedAt) != 0 {
+		t.Fatalf("purged %v without a retention", store.purgedAt)
+	}
+}
+
+func TestEngineKeepsRunningWhenPurgeFails(t *testing.T) {
+	store := &memStore{saved: map[int64]domain.Outage{}, purgeErr: errors.New("database is locked")}
+	prober := &scriptedProber{samples: []domain.Sample{sample(0, true)}}
+	sink := &captureSink{}
+	e := newEngine(prober, store, sink, WithRetention(time.Hour))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	e.purge(ctx) // must only log
+	e.tick(ctx)
+	if len(sink.statuses) != 1 {
+		t.Fatalf("published %d statuses after a failed purge, want 1", len(sink.statuses))
+	}
+}
+
+func TestEngineExportWritesTheWholeHistory(t *testing.T) {
+	history := []domain.Outage{
+		{ID: 1, Start: t0.Add(-2 * time.Hour), End: t0.Add(-2*time.Hour + 5*time.Second), Cause: domain.CauseLink},
+		{ID: 2, Start: t0.Add(-time.Hour), End: t0.Add(-time.Hour + 9*time.Second), Cause: domain.CauseLine},
+	}
+	store := &memStore{saved: map[int64]domain.Outage{}, listed: history}
+	exporter := &captureExporter{}
+	e := newEngine(&scriptedProber{}, store, &captureSink{}, WithExporter(exporter))
+
+	paths, err := e.Export(context.Background())
+	if err != nil || len(paths) != 2 {
+		t.Fatalf("Export() = (%v, %v), want the two written files", paths, err)
+	}
+	if len(exporter.written) != 1 || len(exporter.written[0]) != 2 {
+		t.Fatalf("exporter received %v, want the 2 stored outages", exporter.written)
+	}
+}
+
+func TestEngineExportReportsTheExporterFailure(t *testing.T) {
+	store := &memStore{saved: map[int64]domain.Outage{}}
+	exporter := &captureExporter{err: errors.New("disk full")}
+	e := newEngine(&scriptedProber{}, store, &captureSink{}, WithExporter(exporter))
+
+	if _, err := e.Export(context.Background()); err == nil {
+		t.Fatal("Export() error = nil, want the exporter failure")
+	}
+}
+
+func TestEngineExportWithoutExporterFails(t *testing.T) {
+	e := newEngine(&scriptedProber{}, &memStore{saved: map[int64]domain.Outage{}}, &captureSink{})
+
+	if _, err := e.Export(context.Background()); err == nil {
+		t.Fatal("Export() error = nil, want an error when no exporter is configured")
 	}
 }
