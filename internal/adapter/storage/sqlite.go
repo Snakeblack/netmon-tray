@@ -31,14 +31,20 @@ var migrations = []string{
 	`CREATE INDEX idx_outages_ended ON outages(ended_at);`,
 }
 
+// ErrInUse means another engine holds the history.
+var ErrInUse = errors.New("ya hay un netmon-tray en marcha con este historial")
+
 // Store is the outage history.
 type Store struct {
-	db *sql.DB
+	db   *sql.DB
+	lock *os.File // held while the store is open (ADR 0003)
 }
 
 // Open opens or creates the history at path, migrates its schema and closes
 // outages left open by a previous process at the last instant it saw them.
-func Open(path string) (*Store, error) {
+// While another engine holds the history it fails with ErrInUse and touches
+// nothing.
+func Open(path string) (s *Store, err error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create history directory: %w", err)
@@ -47,6 +53,17 @@ func Open(path string) (*Store, error) {
 	if err := os.Chmod(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("restrict history directory: %w", err)
 	}
+	// Taken before the file is touched: a second engine would otherwise close
+	// the outage the first one still has open.
+	lock, err := lockHistory(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			lock.Close()
+		}
+	}()
 	// SQLite gives the -wal and -shm files the mode of the main file, so the
 	// file must be private before the driver first touches it.
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
@@ -60,7 +77,7 @@ func Open(path string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1)
 
-	s := &Store{db: db}
+	s = &Store{db: db, lock: lock}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, err
@@ -101,8 +118,12 @@ func (s *Store) migrate() error {
 	return nil
 }
 
-// Close releases the history file.
-func (s *Store) Close() error { return s.db.Close() }
+// Close releases the history file and its lock.
+func (s *Store) Close() error {
+	err := s.db.Close()
+	s.lock.Close()
+	return err
+}
 
 // Save inserts the outage or updates it when its ID is already stored.
 func (s *Store) Save(ctx context.Context, o domain.Outage) error {

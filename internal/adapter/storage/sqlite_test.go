@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -271,4 +272,33 @@ func TestPurgeDropsOnlyOutagesThatEndedBeforeTheCutoff(t *testing.T) {
 			t.Fatalf("outage that ended before the cutoff survived: %+v", o)
 		}
 	}
+}
+
+// ADR 0003: one owner. A second engine must not open the history, and above
+// all must not close the outage the first engine still has open.
+func TestSecondOpenIsRefusedWhileTheFirstHoldsTheHistory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "history.db")
+	first, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ongoing := outage(0, 0, domain.CauseRouter)
+	if err := first.Save(context.Background(), ongoing); err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := Open(path)
+	if !errors.Is(err, ErrInUse) {
+		if second != nil {
+			second.Close()
+		}
+		t.Fatalf("second Open() error = %v, want ErrInUse", err)
+	}
+	got, err := first.Last(context.Background())
+	if err != nil || got == nil || !got.Open() {
+		t.Fatalf("Last() = (%+v, %v), want the first engine's outage still open", got, err)
+	}
+
+	first.Close()
+	open(t, path) // the history is free again once its owner closes it
 }
