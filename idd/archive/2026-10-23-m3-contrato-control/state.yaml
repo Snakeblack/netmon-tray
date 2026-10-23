@@ -1,0 +1,488 @@
+{
+  "schema": "idd-state/v1",
+  "change": "m3-contrato-control",
+  "mode": "idd",
+  "status": "closed",
+  "intent": {
+    "kind": "feature",
+    "summary": "El motor sirve un contrato de control local versionado v1 (status, watch, export) por socket Unix y el subcomando ctl lo consume",
+    "acceptance": "ctl status devuelve el estado y el ultimo corte, ctl watch emite un evento por cada cambio de estado, ctl export escribe CSV/JSON y devuelve las rutas, y el socket rechaza a otros usuarios"
+  },
+  "facts": {
+    "coverage": [
+      {
+        "category": "inputs",
+        "question": "Que ordenes y limites tiene el contrato v1?"
+      },
+      {
+        "category": "uniqueness",
+        "question": "Que pasa si ya hay otro motor o un socket huerfano?"
+      },
+      {
+        "category": "persistence",
+        "question": "Donde vive el socket, con que permisos y como se rechaza a otro UID?"
+      },
+      {
+        "category": "copy",
+        "question": "Que formato y idioma tienen la salida y los mensajes de ctl?"
+      },
+      {
+        "category": "url-state",
+        "cite": {
+          "kind": "path",
+          "path": "docs/architecture/decisions/0005-local-control-contract-for-panel-and-tray.md",
+          "line": 20
+        }
+      },
+      {
+        "category": "accessibility",
+        "cite": {
+          "kind": "path",
+          "path": "docs/product/functional-scope.md",
+          "line": 3
+        }
+      },
+      {
+        "category": "errors",
+        "question": "Que pasa sin XDG_RUNTIME_DIR, sin motor o con orden rechazada, y que codigos de salida usa ctl?"
+      }
+    ]
+  },
+  "plan": {
+    "paths": [
+      "cmd/netmon-tray/main.go",
+      "docs/contract/control-v1.md",
+      "internal/adapter/control/client.go",
+      "internal/adapter/control/ctl.go",
+      "internal/adapter/control/ctl_test.go",
+      "internal/adapter/control/protocol.go",
+      "internal/adapter/control/protocol_test.go",
+      "internal/adapter/control/server.go",
+      "internal/adapter/control/server_test.go",
+      "internal/app/engine.go",
+      "internal/app/engine_test.go"
+    ],
+    "work_units": 1,
+    "decision": false,
+    "operations": []
+  },
+  "signals": [
+    {
+      "id": "always",
+      "reason": "every change with a resolved intent",
+      "source": "declaration"
+    },
+    {
+      "id": "security-boundary",
+      "reason": "security boundary: touches internal/adapter/control/client.go and 6 more (matches internal/adapter/control/**)",
+      "source": "declaration"
+    },
+    {
+      "id": "adr-or-quality-attribute",
+      "reason": "declared ADR 0001, 0005 and quality scenario live-status",
+      "source": "declaration"
+    },
+    {
+      "id": "persistent-data",
+      "reason": "persistent data: internal/adapter/control/server_test.go adds os.WriteFile",
+      "source": "diff"
+    }
+  ],
+  "impacts": [
+    {
+      "kind": "adr",
+      "id": "0001",
+      "impact": "conforms",
+      "reason": "Sigue siendo un unico proceso de motor; el socket es una interfaz del mismo proceso y el segundo motor se rechaza antes de abrir el historial"
+    },
+    {
+      "kind": "adr",
+      "id": "0005",
+      "impact": "conforms",
+      "reason": "Implementa el contrato local versionado por socket accesible solo al usuario (permisos 0700/0600 y SO_PEERCRED); el icono sigue en el motor; la prueba de contrato cubre emision de cambios y rechazo de otros UID"
+    },
+    {
+      "kind": "scenario",
+      "id": "live-status",
+      "impact": "conforms",
+      "reason": "watch emite el estado actual y cada cambio por el contrato; el servidor nunca bloquea al motor (Publish no espera al cliente) y no hay E/S de red sincrona en manejadores de interfaz"
+    }
+  ],
+  "obligations": [
+    {
+      "id": "checks-pass",
+      "signal": "always",
+      "status": "satisfied",
+      "evidence": [
+        "ev-7"
+      ]
+    },
+    {
+      "id": "trust-review",
+      "signal": "security-boundary",
+      "status": "satisfied",
+      "evidence": [
+        "ev-6"
+      ]
+    },
+    {
+      "id": "adr-impact-declaration",
+      "signal": "adr-or-quality-attribute",
+      "status": "satisfied",
+      "evidence": [
+        "ev-2"
+      ]
+    },
+    {
+      "id": "migration-compat-and-test",
+      "signal": "persistent-data",
+      "status": "satisfied",
+      "evidence": [
+        "ev-5"
+      ]
+    }
+  ],
+  "gates": [
+    {
+      "id": "open-facts",
+      "status": "resolved",
+      "answer": "Ordenes v1: status + watch + export (Recomendado). Socket: como alexa-tray (XDG_RUNTIME_DIR/netmon-tray/control.sock, dir 0700, socket 0600; sin XDG_RUNTIME_DIR solo bandeja con WARN; otro motor responde -> sale con 1; huerfano se borra). Seguridad: permisos + SO_PEERCRED (Recomendado). ctl: como alexa-tray (subcomando del binario; status texto con --json, watch JSON por lineas, export; salida 0/1/2/3; mensajes en espanol, codigos en ingles)",
+      "source": "user"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "ev-1",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-23T20:01:25.267Z",
+      "detail": {
+        "tree": "sha256:84d10a6492747d4dbaed92aff7e5569091269c8b6c8021c3492259d45821ff79",
+        "runs": [
+          "run-1",
+          "run-2"
+        ]
+      }
+    },
+    {
+      "id": "ev-2",
+      "kind": "adr-impact-declaration",
+      "obligation": "adr-impact-declaration",
+      "recorded_at": "2026-10-23T20:01:25.267Z",
+      "detail": {
+        "refs": [
+          "adr:0001 conforms",
+          "adr:0005 conforms",
+          "scenario:live-status conforms"
+        ],
+        "records": []
+      }
+    },
+    {
+      "id": "ev-3",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-23T20:01:57.180Z",
+      "detail": {
+        "tree": "sha256:f7773e05d3a62b5e4865c5714030293eb1d69954684cf4e367a7116a082489c3",
+        "runs": [
+          "run-3",
+          "run-4"
+        ]
+      }
+    },
+    {
+      "id": "ev-4",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-23T20:02:25.693Z",
+      "detail": {
+        "tree": "sha256:f7773e05d3a62b5e4865c5714030293eb1d69954684cf4e367a7116a082489c3",
+        "runs": [
+          "run-5",
+          "run-6"
+        ]
+      }
+    },
+    {
+      "id": "ev-5",
+      "kind": "migration-test",
+      "obligation": "migration-compat-and-test",
+      "recorded_at": "2026-10-23T20:02:52.996Z",
+      "detail": {
+        "run": "run-7",
+        "tree": "sha256:2465475031a0130ee5aa05d16b1cafbb392b0dab9c4d91241a49b94d3403e199",
+        "plan": "Compatibilidad: este cambio no toca el esquema ni el almacen (el socket es solo de ejecucion y no persiste nada); el avisador persistent-data salio de un os.WriteFile en una prueba. Las pruebas de migracion existentes (sin version -> v1 -> v2 y rechazo de esquema nuevo) siguen en verde. Reversion: borrar internal/adapter/control y el cableado de main, sin efecto sobre history.db"
+      }
+    },
+    {
+      "id": "ev-6",
+      "kind": "frozen-review",
+      "obligation": "trust-review",
+      "recorded_at": "2026-10-23T20:05:15.554Z",
+      "detail": {
+        "lineage_id": "sha256:98e5afd51d3e954a71588430bf22caeba2d6ad415e1a658ebf2ab3b990e13629",
+        "candidate_id": "sha256:ad3be8f4235c965c76e847a4d2b8932bc74271cba591d64803634817a0fb92c5",
+        "candidate_tree": "2352217daca3780709d1ad6ad83c5567003e5533",
+        "findings_digest": "sha256:781aba30ba10269202c18fcc8cdcf34ad8a4f7e19455dbbb9696695b10059fec",
+        "attestation": "relayed"
+      }
+    },
+    {
+      "id": "ev-7",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-23T20:05:36.860Z",
+      "detail": {
+        "tree": "sha256:f7773e05d3a62b5e4865c5714030293eb1d69954684cf4e367a7116a082489c3",
+        "runs": [
+          "run-8",
+          "run-9"
+        ]
+      }
+    }
+  ],
+  "base": "0e7e609e3517b96866ba0c650a82a5d37ecbddb1",
+  "runs": [
+    {
+      "id": "run-1",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:67d750b3256c419619462674e860ea3134ba28f9eaf8403b34af19f4b48041a4",
+      "tree": "sha256:84d10a6492747d4dbaed92aff7e5569091269c8b6c8021c3492259d45821ff79",
+      "recorded_at": "2026-10-23T20:01:25.267Z"
+    },
+    {
+      "id": "run-2",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:84d10a6492747d4dbaed92aff7e5569091269c8b6c8021c3492259d45821ff79",
+      "recorded_at": "2026-10-23T20:01:25.267Z"
+    },
+    {
+      "id": "run-3",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:56ee7e2b91c2777f2e06c65701b699996367f7a1ba4858d17c8773e261f25716",
+      "tree": "sha256:f7773e05d3a62b5e4865c5714030293eb1d69954684cf4e367a7116a082489c3",
+      "recorded_at": "2026-10-23T20:01:57.180Z"
+    },
+    {
+      "id": "run-4",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:f7773e05d3a62b5e4865c5714030293eb1d69954684cf4e367a7116a082489c3",
+      "recorded_at": "2026-10-23T20:01:57.180Z"
+    },
+    {
+      "id": "run-5",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:7768ecb3a696a353d14cdab92db17b8c77c6e36b390e29319e17a01b34650612",
+      "tree": "sha256:f7773e05d3a62b5e4865c5714030293eb1d69954684cf4e367a7116a082489c3",
+      "recorded_at": "2026-10-23T20:02:25.693Z"
+    },
+    {
+      "id": "run-6",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:f7773e05d3a62b5e4865c5714030293eb1d69954684cf4e367a7116a082489c3",
+      "recorded_at": "2026-10-23T20:02:25.693Z"
+    },
+    {
+      "id": "run-7",
+      "purpose": "migration-test",
+      "command": "go test -count=1 -run TestOpen ./internal/adapter/storage/",
+      "exit_code": 0,
+      "output_sha256": "sha256:e4842431413d7cca3924ee6f8161fdd59ede43af48eab1d311cb651428a1aa2d",
+      "tree": "sha256:2465475031a0130ee5aa05d16b1cafbb392b0dab9c4d91241a49b94d3403e199",
+      "recorded_at": "2026-10-23T20:02:52.996Z"
+    },
+    {
+      "id": "run-8",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:7768ecb3a696a353d14cdab92db17b8c77c6e36b390e29319e17a01b34650612",
+      "tree": "sha256:f7773e05d3a62b5e4865c5714030293eb1d69954684cf4e367a7116a082489c3",
+      "recorded_at": "2026-10-23T20:05:36.860Z"
+    },
+    {
+      "id": "run-9",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:f7773e05d3a62b5e4865c5714030293eb1d69954684cf4e367a7116a082489c3",
+      "recorded_at": "2026-10-23T20:05:36.860Z"
+    }
+  ],
+  "reviews": [
+    {
+      "schema_version": 2,
+      "lineage_id": "sha256:98e5afd51d3e954a71588430bf22caeba2d6ad415e1a658ebf2ab3b990e13629",
+      "generation": 1,
+      "predecessor_lineage_id": null,
+      "migration": null,
+      "recovery": null,
+      "revision": 3,
+      "status": "approved",
+      "genesis": {
+        "candidate": {
+          "projection": "idd-tree-diff/v1",
+          "base_tree": "7627b792f42f0a04d52a4d1576895df93383cd95",
+          "candidate_tree": "2352217daca3780709d1ad6ad83c5567003e5533",
+          "paths": [
+            "cmd/netmon-tray/main.go",
+            "docs/contract/control-v1.md",
+            "internal/adapter/control/client.go",
+            "internal/adapter/control/ctl.go",
+            "internal/adapter/control/ctl_test.go",
+            "internal/adapter/control/helpers_test.go",
+            "internal/adapter/control/protocol.go",
+            "internal/adapter/control/server.go",
+            "internal/adapter/control/server_test.go",
+            "internal/app/engine.go",
+            "internal/app/engine_test.go",
+            "internal/app/sink.go"
+          ],
+          "diff_hash": "sha256:a8f145eb91e366fef93f0572ece5ab1fc8dab3c06d1510378f7c8a03681d7704",
+          "paths_digest": "sha256:36be45e850884747af2a21594d8373e02db580b074443a16a367b05c9afd8260",
+          "authored_lines": 1542,
+          "original_changed_lines": 1544
+        },
+        "candidate_id": "sha256:ad3be8f4235c965c76e847a4d2b8932bc74271cba591d64803634817a0fb92c5",
+        "paths": [
+          "cmd/netmon-tray/main.go",
+          "docs/contract/control-v1.md",
+          "internal/adapter/control/client.go",
+          "internal/adapter/control/ctl.go",
+          "internal/adapter/control/ctl_test.go",
+          "internal/adapter/control/helpers_test.go",
+          "internal/adapter/control/protocol.go",
+          "internal/adapter/control/server.go",
+          "internal/adapter/control/server_test.go",
+          "internal/app/engine.go",
+          "internal/app/engine_test.go",
+          "internal/app/sink.go"
+        ],
+        "classification": "high-risk",
+        "selected_domains": [
+          "trust"
+        ],
+        "evidence_fingerprint": "2352217daca3780709d1ad6ad83c5567003e5533",
+        "original_changed_lines": 1544,
+        "authored_lines": 1542
+      },
+      "current_candidate_id": "sha256:ad3be8f4235c965c76e847a4d2b8932bc74271cba591d64803634817a0fb92c5",
+      "current_candidate": {
+        "projection": "idd-tree-diff/v1",
+        "base_tree": "7627b792f42f0a04d52a4d1576895df93383cd95",
+        "candidate_tree": "2352217daca3780709d1ad6ad83c5567003e5533",
+        "paths": [
+          "cmd/netmon-tray/main.go",
+          "docs/contract/control-v1.md",
+          "internal/adapter/control/client.go",
+          "internal/adapter/control/ctl.go",
+          "internal/adapter/control/ctl_test.go",
+          "internal/adapter/control/helpers_test.go",
+          "internal/adapter/control/protocol.go",
+          "internal/adapter/control/server.go",
+          "internal/adapter/control/server_test.go",
+          "internal/app/engine.go",
+          "internal/app/engine_test.go",
+          "internal/app/sink.go"
+        ],
+        "diff_hash": "sha256:a8f145eb91e366fef93f0572ece5ab1fc8dab3c06d1510378f7c8a03681d7704",
+        "paths_digest": "sha256:36be45e850884747af2a21594d8373e02db580b074443a16a367b05c9afd8260",
+        "authored_lines": 1542,
+        "original_changed_lines": 1544
+      },
+      "lenses": {
+        "trust": {
+          "selected": true,
+          "status": "completed",
+          "request_id": "m3-contrato-control:lens-start:1:0",
+          "result_digest": "sha256:8a02a4e9b1aa242a4ace5b344d64fe8c527bc4f80c843cb420c3c2105949fe15",
+          "result": {
+            "findings": [
+              {
+                "severity": "WARNING",
+                "summary": "server.go:137-153 and main.go:109-117: socket claiming is not atomic and only ErrAlreadyRunning stops a second engine. Two engines started together can both open history.db, or one can unlink the other's live socket. This breaks the 'second engine must not touch the history' guarantee.",
+                "acceptance_criteria": "When two engines start at the same time against the same runtime dir, exactly one ends up serving the socket and opening the store, and the other exits without opening the store. A dial failure other than ECONNREFUSED or ENOENT in clearStale never unlinks the socket. A test covers the concurrent start or an EADDRINUSE from ListenUnix."
+              }
+            ]
+          },
+          "operation": null,
+          "result_request_id": "m3-contrato-control:lens-result:1:1"
+        },
+        "runtime": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        },
+        "evolution": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        },
+        "efficiency": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        }
+      },
+      "findings": [
+        {
+          "id": "F-4662e085d0407ffb",
+          "owner": "trust",
+          "severity": "WARNING",
+          "summary": "server.go:137-153 and main.go:109-117: socket claiming is not atomic and only ErrAlreadyRunning stops a second engine. Two engines started together can both open history.db, or one can unlink the other's live socket. This breaks the 'second engine must not touch the history' guarantee.",
+          "acceptance_criteria": "When two engines start at the same time against the same runtime dir, exactly one ends up serving the socket and opening the store, and the other exits without opening the store. A dial failure other than ECONNREFUSED or ENOENT in clearStale never unlinks the socket. A test covers the concurrent start or an EADDRINUSE from ListenUnix.",
+          "blocking": false,
+          "resolution": "advisory"
+        }
+      ],
+      "findings_digest": "sha256:781aba30ba10269202c18fcc8cdcf34ad8a4f7e19455dbbb9696695b10059fec",
+      "correction_budget": {
+        "limit_lines": 200,
+        "used_lines": 0,
+        "failed_attempts": 0,
+        "max_failed_attempts": 3
+      },
+      "correction_history": [],
+      "validation_history": [],
+      "follow_ups": [],
+      "pending_operation": null,
+      "pending_correction": null,
+      "terminal_reason": "no-unresolved-blocking-findings"
+    }
+  ],
+  "closed_at": "2026-10-23T20:05:48.036Z"
+}

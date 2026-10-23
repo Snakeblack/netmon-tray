@@ -1,0 +1,655 @@
+{
+  "schema": "idd-state/v1",
+  "change": "m3-reclamo-socket",
+  "mode": "idd",
+  "status": "closed",
+  "intent": {
+    "kind": "bug",
+    "summary": "Dos motores lanzados a la vez pueden compartir el historial o dejar sin socket al primero: el reclamo del socket no es atomico, EADDRINUSE no cuenta como motor en marcha y cualquier error de conexion se toma como socket huerfano",
+    "acceptance": "Con dos motores lanzados a la vez sobre los mismos datos, exactamente uno abre el historial y sirve el socket y el otro sale con 1 sin abrirlo; un error de conexion distinto de ECONNREFUSED o ENOENT nunca borra el socket"
+  },
+  "facts": {
+    "open": [
+      "Que mecanismo garantiza la exclusion mutua entre motores y donde vive?",
+      "Si el socket no se puede crear pero el motor tiene la exclusion, sigue solo con bandeja?"
+    ]
+  },
+  "plan": {
+    "paths": [
+      "cmd/netmon-tray/main.go",
+      "docs/contract/control-v1.md",
+      "internal/adapter/control/server.go",
+      "internal/adapter/control/server_test.go",
+      "internal/adapter/storage/lock.go",
+      "internal/adapter/storage/sqlite.go",
+      "internal/adapter/storage/sqlite_test.go"
+    ],
+    "work_units": 1,
+    "decision": false,
+    "operations": []
+  },
+  "signals": [
+    {
+      "id": "always",
+      "reason": "every change with a resolved intent",
+      "source": "declaration"
+    },
+    {
+      "id": "bug-fix",
+      "reason": "the intent is a bug fix",
+      "source": "declaration"
+    },
+    {
+      "id": "persistent-data",
+      "reason": "persistent data: touches internal/adapter/storage/lock.go and 2 more (matches internal/adapter/storage/**)",
+      "source": "declaration"
+    },
+    {
+      "id": "security-boundary",
+      "reason": "security boundary: touches internal/adapter/control/server.go and 1 more (matches internal/adapter/control/**)",
+      "source": "declaration"
+    },
+    {
+      "id": "adr-or-quality-attribute",
+      "reason": "declared ADR 0001, 0003, 0005",
+      "source": "declaration"
+    }
+  ],
+  "impacts": [
+    {
+      "kind": "adr",
+      "id": "0001",
+      "impact": "conforms",
+      "reason": "Refuerza el proceso unico: el lock impide un segundo motor sobre los mismos datos"
+    },
+    {
+      "kind": "adr",
+      "id": "0003",
+      "impact": "conforms",
+      "reason": "Hace cumplir el unico escritor: flock exclusivo sobre history.db.lock antes de tocar el archivo; un segundo motor no abre ni cierra cortes del primero"
+    },
+    {
+      "kind": "adr",
+      "id": "0005",
+      "impact": "conforms",
+      "reason": "El canal sigue siendo solo del usuario; solo el dueno del historial reclama el socket, EADDRINUSE cuenta como motor en marcha y un socket solo se sustituye ante ECONNREFUSED"
+    }
+  ],
+  "obligations": [
+    {
+      "id": "checks-pass",
+      "signal": "always",
+      "status": "satisfied",
+      "evidence": [
+        "ev-9"
+      ]
+    },
+    {
+      "id": "repro-test",
+      "signal": "bug-fix",
+      "status": "satisfied",
+      "evidence": [
+        "ev-1"
+      ]
+    },
+    {
+      "id": "migration-compat-and-test",
+      "signal": "persistent-data",
+      "status": "satisfied",
+      "evidence": [
+        "ev-7"
+      ]
+    },
+    {
+      "id": "trust-review",
+      "signal": "security-boundary",
+      "status": "satisfied",
+      "evidence": [
+        "ev-8"
+      ]
+    },
+    {
+      "id": "adr-impact-declaration",
+      "signal": "adr-or-quality-attribute",
+      "status": "satisfied",
+      "evidence": [
+        "ev-4"
+      ]
+    }
+  ],
+  "gates": [
+    {
+      "id": "open-facts",
+      "status": "resolved",
+      "answer": "Exclusion: flock en el historial (Recomendado). Sin socket: sigue solo con bandeja (Recomendado)",
+      "source": "user"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "ev-1",
+      "kind": "repro-run-pair",
+      "obligation": "repro-test",
+      "recorded_at": "2026-10-23T23:18:03.361Z",
+      "detail": {
+        "red": "run-1",
+        "green": "run-2"
+      }
+    },
+    {
+      "id": "ev-2",
+      "kind": "migration-test",
+      "obligation": "migration-compat-and-test",
+      "recorded_at": "2026-10-23T23:18:26.286Z",
+      "detail": {
+        "run": "run-3",
+        "tree": "sha256:799c731d01bd15ec6172f1e8e9a9990e1c06c3291a623e978ec07939ccf39478",
+        "plan": "Compatibilidad: el esquema no cambia (user_version sigue en 2); el unico artefacto nuevo es history.db.lock (0600) junto al historial, creado al abrir. Un historial existente abre igual y migra como antes. Reversion: quitar lockHistory; el archivo .lock sobrante es inocuo y se puede borrar"
+      }
+    },
+    {
+      "id": "ev-3",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-23T23:18:34.416Z",
+      "detail": {
+        "tree": "sha256:188d5a41474e89b1ae8641389ccde6caffb5ce08d35aed89794489af82d42965",
+        "runs": [
+          "run-4",
+          "run-5"
+        ]
+      }
+    },
+    {
+      "id": "ev-4",
+      "kind": "adr-impact-declaration",
+      "obligation": "adr-impact-declaration",
+      "recorded_at": "2026-10-23T23:18:34.416Z",
+      "detail": {
+        "refs": [
+          "adr:0001 conforms",
+          "adr:0003 conforms",
+          "adr:0005 conforms"
+        ],
+        "records": []
+      }
+    },
+    {
+      "id": "ev-5",
+      "kind": "frozen-review",
+      "obligation": "trust-review",
+      "recorded_at": "2026-10-23T23:20:30.199Z",
+      "detail": {
+        "lineage_id": "sha256:9431d6c96ff44d3d6870f6622a448efd42b4423fda044f3337c57bab45e3a0a1",
+        "candidate_id": "sha256:599840afb25a9a3830fa8609cb1f7bb14873c450b924b099c93a2263b21bf84d",
+        "candidate_tree": "f5959008a5715f296c2532872d0f948d37a83bce",
+        "findings_digest": "sha256:9db9c34932a5438b4357aae8219bf0c1e81cc10fb5c8fd58a7b9660b5f0c7f38",
+        "attestation": "relayed"
+      }
+    },
+    {
+      "id": "ev-6",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-23T23:22:02.759Z",
+      "detail": {
+        "tree": "sha256:3a6d8589ea9991f29edd6360f54868bd79c9077cb77d7566c62a3996028975c2",
+        "runs": [
+          "run-6",
+          "run-7"
+        ]
+      }
+    },
+    {
+      "id": "ev-7",
+      "kind": "migration-test",
+      "obligation": "migration-compat-and-test",
+      "recorded_at": "2026-10-23T23:22:10.399Z",
+      "detail": {
+        "run": "run-8",
+        "tree": "sha256:33c87f8784cdd8e14fa4f67fd595868bfcffa6a807a52fc696d2c1532af06c2b",
+        "plan": "Compatibilidad: el esquema no cambia (user_version sigue en 2); los unicos artefactos nuevos son history.db.lock (0600) junto al historial y control.lock en el directorio del socket, creados al arrancar. Un historial existente abre y migra como antes. Reversion: quitar los dos flock; los archivos .lock sobrantes son inocuos y se pueden borrar"
+      }
+    },
+    {
+      "id": "ev-8",
+      "kind": "frozen-review",
+      "obligation": "trust-review",
+      "recorded_at": "2026-10-23T23:24:23.548Z",
+      "detail": {
+        "lineage_id": "sha256:b8d17a0e5d295ffbee0914c9e7c4882f18d2b71724c9c5186fc45367705a8e68",
+        "candidate_id": "sha256:dc1c01b8692620b1abea9c73929999ceb83871a11e78cc05b8389c143f3322ca",
+        "candidate_tree": "e8baccc9d8170c40cbcd0446caebfddc97523953",
+        "findings_digest": "sha256:4d59fd4aa8eefff6dbf7cd085cc100ee928217573658f8bbc301aa4a3f1adc0f",
+        "attestation": "relayed"
+      }
+    },
+    {
+      "id": "ev-9",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-23T23:24:38.778Z",
+      "detail": {
+        "tree": "sha256:3a6d8589ea9991f29edd6360f54868bd79c9077cb77d7566c62a3996028975c2",
+        "runs": [
+          "run-9",
+          "run-10"
+        ]
+      }
+    }
+  ],
+  "base": "0e7e609e3517b96866ba0c650a82a5d37ecbddb1",
+  "runs": [
+    {
+      "id": "run-1",
+      "purpose": "repro-test",
+      "command": "go test -count=1 -run 'TestSecondOpenIsRefusedWhileTheFirstHoldsTheHistory|TestAddressInUseMeansAlreadyRunning|TestUnreachableSocketIsNotRemoved' ./internal/adapter/storage/ ./internal/adapter/control/",
+      "exit_code": 1,
+      "output_sha256": "sha256:2b0111206281e6887d54d7d66a69489d9c3d0593f54d27b575d3c08b0d991b04",
+      "tree": "sha256:6dbd82279c93a6349722d86a4fa0c4be965121f6f218ffede42cafb6abe20c4e",
+      "recorded_at": "2026-10-23T23:17:14.141Z"
+    },
+    {
+      "id": "run-2",
+      "purpose": "repro-test",
+      "command": "go test -count=1 -run 'TestSecondOpenIsRefusedWhileTheFirstHoldsTheHistory|TestAddressInUseMeansAlreadyRunning|TestUnreachableSocketIsNotRemoved' ./internal/adapter/storage/ ./internal/adapter/control/",
+      "exit_code": 0,
+      "output_sha256": "sha256:f710e1bbf536b1b4bb3426793f2db9b52e3148cb38110b512f3ec5bf9c7cff80",
+      "tree": "sha256:799c731d01bd15ec6172f1e8e9a9990e1c06c3291a623e978ec07939ccf39478",
+      "recorded_at": "2026-10-23T23:18:03.361Z"
+    },
+    {
+      "id": "run-3",
+      "purpose": "migration-test",
+      "command": "go test -count=1 -run 'TestOpen|TestHistorySurvivesReopen|TestSecondOpen' ./internal/adapter/storage/",
+      "exit_code": 0,
+      "output_sha256": "sha256:9de61fd50e888542ecbde83caa153bb8e51d6cbd6ad2ab0b90b60ae6b879edca",
+      "tree": "sha256:799c731d01bd15ec6172f1e8e9a9990e1c06c3291a623e978ec07939ccf39478",
+      "recorded_at": "2026-10-23T23:18:26.286Z"
+    },
+    {
+      "id": "run-4",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:8d12a7b31c700426583cb18f8336fd73f2f40fa3e0ad1738601b480137314aae",
+      "tree": "sha256:188d5a41474e89b1ae8641389ccde6caffb5ce08d35aed89794489af82d42965",
+      "recorded_at": "2026-10-23T23:18:34.416Z"
+    },
+    {
+      "id": "run-5",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:188d5a41474e89b1ae8641389ccde6caffb5ce08d35aed89794489af82d42965",
+      "recorded_at": "2026-10-23T23:18:34.416Z"
+    },
+    {
+      "id": "run-6",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:fbafe009074f5ed1a5dee9b702733c5cd380509cabf45f8c48aca12a842b1535",
+      "tree": "sha256:3a6d8589ea9991f29edd6360f54868bd79c9077cb77d7566c62a3996028975c2",
+      "recorded_at": "2026-10-23T23:22:02.759Z"
+    },
+    {
+      "id": "run-7",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:3a6d8589ea9991f29edd6360f54868bd79c9077cb77d7566c62a3996028975c2",
+      "recorded_at": "2026-10-23T23:22:02.759Z"
+    },
+    {
+      "id": "run-8",
+      "purpose": "migration-test",
+      "command": "go test -count=1 -run 'TestOpen|TestHistorySurvivesReopen|TestSecondOpen' ./internal/adapter/storage/",
+      "exit_code": 0,
+      "output_sha256": "sha256:9de61fd50e888542ecbde83caa153bb8e51d6cbd6ad2ab0b90b60ae6b879edca",
+      "tree": "sha256:33c87f8784cdd8e14fa4f67fd595868bfcffa6a807a52fc696d2c1532af06c2b",
+      "recorded_at": "2026-10-23T23:22:10.399Z"
+    },
+    {
+      "id": "run-9",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:7768ecb3a696a353d14cdab92db17b8c77c6e36b390e29319e17a01b34650612",
+      "tree": "sha256:3a6d8589ea9991f29edd6360f54868bd79c9077cb77d7566c62a3996028975c2",
+      "recorded_at": "2026-10-23T23:24:38.778Z"
+    },
+    {
+      "id": "run-10",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:3a6d8589ea9991f29edd6360f54868bd79c9077cb77d7566c62a3996028975c2",
+      "recorded_at": "2026-10-23T23:24:38.778Z"
+    }
+  ],
+  "reviews": [
+    {
+      "schema_version": 2,
+      "lineage_id": "sha256:9431d6c96ff44d3d6870f6622a448efd42b4423fda044f3337c57bab45e3a0a1",
+      "generation": 1,
+      "predecessor_lineage_id": null,
+      "migration": null,
+      "recovery": null,
+      "revision": 3,
+      "status": "approved",
+      "genesis": {
+        "candidate": {
+          "projection": "idd-tree-diff/v1",
+          "base_tree": "7627b792f42f0a04d52a4d1576895df93383cd95",
+          "candidate_tree": "f5959008a5715f296c2532872d0f948d37a83bce",
+          "paths": [
+            "cmd/netmon-tray/main.go",
+            "docs/contract/control-v1.md",
+            "internal/adapter/control/client.go",
+            "internal/adapter/control/ctl.go",
+            "internal/adapter/control/ctl_test.go",
+            "internal/adapter/control/helpers_test.go",
+            "internal/adapter/control/protocol.go",
+            "internal/adapter/control/server.go",
+            "internal/adapter/control/server_test.go",
+            "internal/adapter/storage/lock.go",
+            "internal/adapter/storage/sqlite.go",
+            "internal/adapter/storage/sqlite_test.go",
+            "internal/app/engine.go",
+            "internal/app/engine_test.go",
+            "internal/app/sink.go"
+          ],
+          "diff_hash": "sha256:c84aca12210565658597a22cd2f0b2813ed494ada1dcb3f07f1f332cad4a22d3",
+          "paths_digest": "sha256:384ce0ebe8beb6975c212e77665b2b1de0a0bbc50d18e1c44f321a2c59fd8b8c",
+          "authored_lines": 1683,
+          "original_changed_lines": 1690
+        },
+        "candidate_id": "sha256:599840afb25a9a3830fa8609cb1f7bb14873c450b924b099c93a2263b21bf84d",
+        "paths": [
+          "cmd/netmon-tray/main.go",
+          "docs/contract/control-v1.md",
+          "internal/adapter/control/client.go",
+          "internal/adapter/control/ctl.go",
+          "internal/adapter/control/ctl_test.go",
+          "internal/adapter/control/helpers_test.go",
+          "internal/adapter/control/protocol.go",
+          "internal/adapter/control/server.go",
+          "internal/adapter/control/server_test.go",
+          "internal/adapter/storage/lock.go",
+          "internal/adapter/storage/sqlite.go",
+          "internal/adapter/storage/sqlite_test.go",
+          "internal/app/engine.go",
+          "internal/app/engine_test.go",
+          "internal/app/sink.go"
+        ],
+        "classification": "high-risk",
+        "selected_domains": [
+          "trust"
+        ],
+        "evidence_fingerprint": "f5959008a5715f296c2532872d0f948d37a83bce",
+        "original_changed_lines": 1690,
+        "authored_lines": 1683
+      },
+      "current_candidate_id": "sha256:599840afb25a9a3830fa8609cb1f7bb14873c450b924b099c93a2263b21bf84d",
+      "current_candidate": {
+        "projection": "idd-tree-diff/v1",
+        "base_tree": "7627b792f42f0a04d52a4d1576895df93383cd95",
+        "candidate_tree": "f5959008a5715f296c2532872d0f948d37a83bce",
+        "paths": [
+          "cmd/netmon-tray/main.go",
+          "docs/contract/control-v1.md",
+          "internal/adapter/control/client.go",
+          "internal/adapter/control/ctl.go",
+          "internal/adapter/control/ctl_test.go",
+          "internal/adapter/control/helpers_test.go",
+          "internal/adapter/control/protocol.go",
+          "internal/adapter/control/server.go",
+          "internal/adapter/control/server_test.go",
+          "internal/adapter/storage/lock.go",
+          "internal/adapter/storage/sqlite.go",
+          "internal/adapter/storage/sqlite_test.go",
+          "internal/app/engine.go",
+          "internal/app/engine_test.go",
+          "internal/app/sink.go"
+        ],
+        "diff_hash": "sha256:c84aca12210565658597a22cd2f0b2813ed494ada1dcb3f07f1f332cad4a22d3",
+        "paths_digest": "sha256:384ce0ebe8beb6975c212e77665b2b1de0a0bbc50d18e1c44f321a2c59fd8b8c",
+        "authored_lines": 1683,
+        "original_changed_lines": 1690
+      },
+      "lenses": {
+        "trust": {
+          "selected": true,
+          "status": "completed",
+          "request_id": "m3-reclamo-socket:lens-start:1:0",
+          "result_digest": "sha256:c614c51ffbcc32879ba99bb3d4dd3c59dd8a863a3fe9662619e242f3aed50ce7",
+          "result": {
+            "findings": [
+              {
+                "severity": "WARNING",
+                "summary": "server.go:145-168 and 92: stale-socket removal (Dial ECONNREFUSED then Remove) is not atomic and is not covered by the history lock when data directories differ. A concurrent start can unlink a live socket, and Close then unlinks the other engine's socket by path.",
+                "acceptance_criteria": "Socket ownership is serialized by something keyed to the socket path, such as an flock on a lock file in the control directory held for the life of the server. Alternatively, removal is shown not to be able to delete a socket another engine bound after the probe. A test starts several Listen calls concurrently over one control directory, with no shared history lock, and exactly one succeeds. The others return ErrAlreadyRunning and leave the winner's socket reachable until the winner closes."
+              },
+              {
+                "severity": "SUGGESTION",
+                "summary": "server.go:229-236: AcceptUnix errors other than ErrClosed retry immediately with a Warn log and no backoff. Persistent EMFILE/ENFILE gives a hot loop and log flood.",
+                "acceptance_criteria": "A persistent, non-closed accept error is retried with a bounded delay or backoff, as net/http does for temporary errors, and logging is rate-limited. A test using a listener stub that returns a repeating error shows the loop does not iterate faster than the delay, and that Close still stops it promptly."
+              }
+            ]
+          },
+          "operation": null,
+          "result_request_id": "m3-reclamo-socket:lens-result:1:1"
+        },
+        "runtime": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        },
+        "evolution": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        },
+        "efficiency": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        }
+      },
+      "findings": [
+        {
+          "id": "F-7d2ea19a14590e0d",
+          "owner": "trust",
+          "severity": "WARNING",
+          "summary": "server.go:145-168 and 92: stale-socket removal (Dial ECONNREFUSED then Remove) is not atomic and is not covered by the history lock when data directories differ. A concurrent start can unlink a live socket, and Close then unlinks the other engine's socket by path.",
+          "acceptance_criteria": "Socket ownership is serialized by something keyed to the socket path, such as an flock on a lock file in the control directory held for the life of the server. Alternatively, removal is shown not to be able to delete a socket another engine bound after the probe. A test starts several Listen calls concurrently over one control directory, with no shared history lock, and exactly one succeeds. The others return ErrAlreadyRunning and leave the winner's socket reachable until the winner closes.",
+          "blocking": false,
+          "resolution": "advisory"
+        },
+        {
+          "id": "F-be042309048875a0",
+          "owner": "trust",
+          "severity": "SUGGESTION",
+          "summary": "server.go:229-236: AcceptUnix errors other than ErrClosed retry immediately with a Warn log and no backoff. Persistent EMFILE/ENFILE gives a hot loop and log flood.",
+          "acceptance_criteria": "A persistent, non-closed accept error is retried with a bounded delay or backoff, as net/http does for temporary errors, and logging is rate-limited. A test using a listener stub that returns a repeating error shows the loop does not iterate faster than the delay, and that Close still stops it promptly.",
+          "blocking": false,
+          "resolution": "advisory"
+        }
+      ],
+      "findings_digest": "sha256:9db9c34932a5438b4357aae8219bf0c1e81cc10fb5c8fd58a7b9660b5f0c7f38",
+      "correction_budget": {
+        "limit_lines": 200,
+        "used_lines": 0,
+        "failed_attempts": 0,
+        "max_failed_attempts": 3
+      },
+      "correction_history": [],
+      "validation_history": [],
+      "follow_ups": [],
+      "pending_operation": null,
+      "pending_correction": null,
+      "terminal_reason": "no-unresolved-blocking-findings"
+    },
+    {
+      "schema_version": 2,
+      "lineage_id": "sha256:b8d17a0e5d295ffbee0914c9e7c4882f18d2b71724c9c5186fc45367705a8e68",
+      "generation": 2,
+      "predecessor_lineage_id": "sha256:9431d6c96ff44d3d6870f6622a448efd42b4423fda044f3337c57bab45e3a0a1",
+      "migration": null,
+      "recovery": null,
+      "revision": 3,
+      "status": "approved",
+      "genesis": {
+        "candidate": {
+          "projection": "idd-tree-diff/v1",
+          "base_tree": "7627b792f42f0a04d52a4d1576895df93383cd95",
+          "candidate_tree": "e8baccc9d8170c40cbcd0446caebfddc97523953",
+          "paths": [
+            "cmd/netmon-tray/main.go",
+            "docs/contract/control-v1.md",
+            "internal/adapter/control/client.go",
+            "internal/adapter/control/ctl.go",
+            "internal/adapter/control/ctl_test.go",
+            "internal/adapter/control/helpers_test.go",
+            "internal/adapter/control/protocol.go",
+            "internal/adapter/control/server.go",
+            "internal/adapter/control/server_test.go",
+            "internal/adapter/storage/lock.go",
+            "internal/adapter/storage/sqlite.go",
+            "internal/adapter/storage/sqlite_test.go",
+            "internal/app/engine.go",
+            "internal/app/engine_test.go",
+            "internal/app/sink.go"
+          ],
+          "diff_hash": "sha256:19fb4cdb093d7b5e7714e00e4d597af616ff6dbe1b72133f70236589e94c571c",
+          "paths_digest": "sha256:384ce0ebe8beb6975c212e77665b2b1de0a0bbc50d18e1c44f321a2c59fd8b8c",
+          "authored_lines": 1822,
+          "original_changed_lines": 1829
+        },
+        "candidate_id": "sha256:dc1c01b8692620b1abea9c73929999ceb83871a11e78cc05b8389c143f3322ca",
+        "paths": [
+          "cmd/netmon-tray/main.go",
+          "docs/contract/control-v1.md",
+          "internal/adapter/control/client.go",
+          "internal/adapter/control/ctl.go",
+          "internal/adapter/control/ctl_test.go",
+          "internal/adapter/control/helpers_test.go",
+          "internal/adapter/control/protocol.go",
+          "internal/adapter/control/server.go",
+          "internal/adapter/control/server_test.go",
+          "internal/adapter/storage/lock.go",
+          "internal/adapter/storage/sqlite.go",
+          "internal/adapter/storage/sqlite_test.go",
+          "internal/app/engine.go",
+          "internal/app/engine_test.go",
+          "internal/app/sink.go"
+        ],
+        "classification": "high-risk",
+        "selected_domains": [
+          "trust"
+        ],
+        "evidence_fingerprint": "e8baccc9d8170c40cbcd0446caebfddc97523953",
+        "original_changed_lines": 1829,
+        "authored_lines": 1822
+      },
+      "current_candidate_id": "sha256:dc1c01b8692620b1abea9c73929999ceb83871a11e78cc05b8389c143f3322ca",
+      "current_candidate": {
+        "projection": "idd-tree-diff/v1",
+        "base_tree": "7627b792f42f0a04d52a4d1576895df93383cd95",
+        "candidate_tree": "e8baccc9d8170c40cbcd0446caebfddc97523953",
+        "paths": [
+          "cmd/netmon-tray/main.go",
+          "docs/contract/control-v1.md",
+          "internal/adapter/control/client.go",
+          "internal/adapter/control/ctl.go",
+          "internal/adapter/control/ctl_test.go",
+          "internal/adapter/control/helpers_test.go",
+          "internal/adapter/control/protocol.go",
+          "internal/adapter/control/server.go",
+          "internal/adapter/control/server_test.go",
+          "internal/adapter/storage/lock.go",
+          "internal/adapter/storage/sqlite.go",
+          "internal/adapter/storage/sqlite_test.go",
+          "internal/app/engine.go",
+          "internal/app/engine_test.go",
+          "internal/app/sink.go"
+        ],
+        "diff_hash": "sha256:19fb4cdb093d7b5e7714e00e4d597af616ff6dbe1b72133f70236589e94c571c",
+        "paths_digest": "sha256:384ce0ebe8beb6975c212e77665b2b1de0a0bbc50d18e1c44f321a2c59fd8b8c",
+        "authored_lines": 1822,
+        "original_changed_lines": 1829
+      },
+      "lenses": {
+        "trust": {
+          "selected": true,
+          "status": "completed",
+          "request_id": "m3-reclamo-socket:lens-start:2:0",
+          "result_digest": "sha256:0fa38eeaca8882e0d194fd5ba5d8378917d98e795204f8f7a9dfdb78f111f3cc",
+          "result": {
+            "findings": []
+          },
+          "operation": null,
+          "result_request_id": "m3-reclamo-socket:lens-result:2:1"
+        },
+        "runtime": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        },
+        "evolution": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        },
+        "efficiency": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        }
+      },
+      "findings": [],
+      "findings_digest": "sha256:4d59fd4aa8eefff6dbf7cd085cc100ee928217573658f8bbc301aa4a3f1adc0f",
+      "correction_budget": {
+        "limit_lines": 200,
+        "used_lines": 0,
+        "failed_attempts": 0,
+        "max_failed_attempts": 3
+      },
+      "correction_history": [],
+      "validation_history": [],
+      "follow_ups": [],
+      "pending_operation": null,
+      "pending_correction": null,
+      "terminal_reason": "no-unresolved-blocking-findings"
+    }
+  ],
+  "closed_at": "2026-10-23T23:24:38.855Z"
+}
