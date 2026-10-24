@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # The whole history with its tags, so Go stamps the tag as the version.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: go vet ./...
+      - run: go test ./...
+      - run: node --test omarchy-plugin/
+      # Built outside the work tree: a file inside it would stamp "+dirty".
+      - name: Build
+        env:
+          TAG: ${{ github.ref_name }}
+          OUT: ${{ runner.temp }}/dist
+        run: |
+          set -eu
+          mkdir -p "$OUT"
+          for arch in amd64 arm64; do
+            name="netmon-tray-$TAG-linux-$arch"
+            mkdir "$OUT/$name"
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -ldflags="-s -w" -o "$OUT/$name/netmon-tray" ./cmd/netmon-tray
+            cp README.md LICENSE "$OUT/$name/"
+            tar -C "$OUT" -czf "$OUT/$name.tar.gz" "$name"
+          done
+          "$OUT/netmon-tray-$TAG-linux-amd64/netmon-tray" version | grep -Fx "netmon-tray $TAG"
+          (cd "$OUT" && sha256sum -- *.tar.gz > SHA256SUMS)
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          OUT: ${{ runner.temp }}/dist
+        run: gh release create "$TAG" "$OUT"/*.tar.gz "$OUT/SHA256SUMS" --title "$TAG" --generate-notes
