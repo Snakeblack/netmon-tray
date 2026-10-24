@@ -5,10 +5,11 @@ Contrato local entre el motor de netmon-tray y sus clientes (`netmon-tray ctl` y
 ## Canal
 
 - Socket Unix `$XDG_RUNTIME_DIR/netmon-tray/control.sock`. El directorio es `0700` y el socket `0600`.
-- El motor comprueba el UID del par (`SO_PEERCRED`) en cada conexión y cierra sin responder la de otro usuario.
-- Solo un motor es dueño del historial: lo garantiza un `flock` sobre `history.db.lock`, que el kernel suelta si el proceso muere. Un segundo motor termina con código 1 sin abrir el historial ni tocar el socket.
-- El dueño reclama el socket después, bajo un segundo `flock` sobre `control.lock` en el mismo directorio que el socket, que mantiene hasta haberlo borrado al cerrar. Así se excluyen también motores con historiales distintos. Si otro motor tiene ese lock, responde en el socket o lo enlaza antes (`EADDRINUSE`), el nuevo termina con código 1. Solo un socket que rechaza la conexión (`ECONNREFUSED`) se considera huérfano y se sustituye; ante cualquier otro error se deja en su sitio.
-- Sin `XDG_RUNTIME_DIR` o sin poder crear el socket, el motor sigue con la bandeja y registra un aviso.
+- En Windows (10 1803 o posterior), el mismo socket AF_UNIX en `%LOCALAPPDATA%\netmon-tray\control.sock`. El directorio lleva una ACL protegida que solo da acceso al usuario, y el socket la hereda.
+- El motor comprueba en cada conexión quién está al otro lado y cierra sin responder la de otro usuario: en Linux, el UID del par (`SO_PEERCRED`); en Windows, el SID del proceso del par (`SIO_AF_UNIX_GETPEERPID`).
+- Solo un motor es dueño del historial: lo garantiza un bloqueo exclusivo sobre `history.db.lock` (`flock`, o `LockFileEx` en Windows), que el sistema suelta si el proceso muere. Un segundo motor termina con código 4 sin abrir el historial ni tocar el socket.
+- El dueño reclama el socket después, bajo un segundo bloqueo sobre `control.lock` en el mismo directorio que el socket, que mantiene hasta haberlo borrado al cerrar. Así se excluyen también motores con historiales distintos. Si otro motor tiene ese bloqueo, responde en el socket o lo enlaza antes (`EADDRINUSE`), el nuevo termina con código 4. Solo un socket que rechaza la conexión (`ECONNREFUSED`) se considera huérfano y se sustituye; ante cualquier otro error se deja en su sitio.
+- Sin `XDG_RUNTIME_DIR` (`LOCALAPPDATA` en Windows) o sin poder crear el socket, el motor sigue con la bandeja y registra un aviso.
 - Hasta 16 conexiones a la vez; la 17.ª recibe `busy`.
 
 ## Mensajes

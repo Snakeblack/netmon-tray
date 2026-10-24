@@ -12,16 +12,16 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 
+	"github.com/Snakeblack/netmon-tray/internal/adapter/filelock"
 	"github.com/Snakeblack/netmon-tray/internal/app"
 )
 
 // SocketName is the file the engine listens on inside the control directory.
 const SocketName = "control.sock"
 
-// lockName is the file whose flock makes one engine the owner of the socket.
+// lockName is the file whose lock makes one engine the owner of the socket.
 const lockName = "control.lock"
 
 // ErrAlreadyRunning means another engine answers on the socket.
@@ -45,18 +45,6 @@ type Exporter interface {
 	Export(ctx context.Context) ([]string, error)
 }
 
-// DefaultDir is $XDG_RUNTIME_DIR/netmon-tray.
-func DefaultDir() (string, error) {
-	base := os.Getenv("XDG_RUNTIME_DIR")
-	if base == "" {
-		return "", errors.New("XDG_RUNTIME_DIR no está definido")
-	}
-	if !filepath.IsAbs(base) {
-		return "", fmt.Errorf("XDG_RUNTIME_DIR %q no es una ruta absoluta", base)
-	}
-	return filepath.Join(base, "netmon-tray"), nil
-}
-
 // Server accepts the clients of one engine. It implements app.Sink: each
 // published status is kept for status and pushed to every watch.
 type Server struct {
@@ -65,7 +53,7 @@ type Server struct {
 	lock     *os.File                      // held until Close has unlinked the socket
 	exporter Exporter
 	log      *slog.Logger
-	uid      int
+	owner    owner // the user the engine runs as; only it may connect
 	slots    chan struct{}
 	wg       sync.WaitGroup
 	ctx      context.Context
@@ -80,16 +68,21 @@ type Server struct {
 
 var _ app.Sink = (*Server)(nil)
 
-// Listen creates dir with mode 0700 and the socket in it with mode 0600;
-// Serve starts accepting. The engine that holds the flock of dir owns the
-// socket; the others get ErrAlreadyRunning, as they do when an engine
-// without the lock answers on it or binds it first. Under the lock a socket
-// that refuses connections is a leftover and is replaced; any other failure
-// to reach it leaves it in place and returns an error. log nil discards the
-// log.
+// Listen creates dir private to the current user (mode 0700, or on Windows a
+// protected ACL with only the user) and the socket in it (mode 0600, or the
+// ACL it inherits); Serve starts accepting. The engine that holds the lock
+// of dir owns the socket; the others get ErrAlreadyRunning, as they do when
+// an engine without the lock answers on it or binds it first. Under the lock
+// a socket that refuses connections is a leftover and is replaced; any other
+// failure to reach it leaves it in place and returns an error. log nil
+// discards the log.
 func Listen(dir string, log *slog.Logger) (srv *Server, err error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
+	}
+	self, err := currentOwner()
+	if err != nil {
+		return nil, err
 	}
 	if err := privateDir(dir); err != nil {
 		return nil, err
@@ -108,20 +101,20 @@ func Listen(dir string, log *slog.Logger) (srv *Server, err error) {
 		return nil, err
 	}
 	ln, err := listenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
-	if errors.Is(err, syscall.EADDRINUSE) {
+	if isAddrInUse(err) {
 		// Another engine bound the path between clearStale and here.
 		return nil, fmt.Errorf("%s: %w", path, ErrAlreadyRunning)
 	}
 	if err != nil {
 		return nil, err
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
+	if err := privateSocket(path); err != nil {
 		ln.Close()
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Server{
-		ln: ln, acceptFn: ln.AcceptUnix, lock: lock, log: log, uid: os.Getuid(),
+		ln: ln, acceptFn: ln.AcceptUnix, lock: lock, log: log, owner: self,
 		ctx: ctx, cancel: cancel,
 		slots: make(chan struct{}, maxConns),
 		state: FromApp(app.Status{}),
@@ -136,28 +129,6 @@ func (s *Server) Serve(exporter Exporter) {
 	s.exporter = exporter
 	s.wg.Add(1)
 	go s.accept()
-}
-
-// privateDir makes dir a directory only its owner, the current user, can
-// enter.
-func privateDir(dir string) error {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	info, err := os.Lstat(dir)
-	if err != nil {
-		return err
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("%s no es un directorio", dir)
-	}
-	if st, ok := info.Sys().(*syscall.Stat_t); ok && int(st.Uid) != os.Getuid() {
-		return fmt.Errorf("%s pertenece a otro usuario", dir)
-	}
-	if info.Mode().Perm() != 0o700 {
-		return os.Chmod(dir, 0o700)
-	}
-	return nil
 }
 
 func clearStale(path string) error {
@@ -178,7 +149,7 @@ func clearStale(path string) error {
 		return fmt.Errorf("%s: %w", path, ErrAlreadyRunning)
 	case errors.Is(err, fs.ErrNotExist):
 		return nil // removed since Lstat
-	case errors.Is(err, syscall.ECONNREFUSED):
+	case isRefused(err):
 		return os.Remove(path)
 	default:
 		return fmt.Errorf("%s no responde y no se sabe si está huérfano: %w", path, err)
@@ -186,20 +157,13 @@ func clearStale(path string) error {
 }
 
 // lockDir takes the owner lock of the control directory without waiting.
-// The kernel drops it when the process exits.
+// The system drops it when the process exits.
 func lockDir(dir string) (*os.File, error) {
-	f, err := os.OpenFile(filepath.Join(dir, lockName), os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, err
+	f, err := filelock.TryLock(filepath.Join(dir, lockName))
+	if errors.Is(err, filelock.ErrLocked) {
+		return nil, fmt.Errorf("%s: %w", dir, ErrAlreadyRunning)
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		f.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, fmt.Errorf("%s: %w", dir, ErrAlreadyRunning)
-		}
-		return nil, err
-	}
-	return f, nil
+	return f, err
 }
 
 func (s *Server) releaseLock() {
@@ -287,8 +251,8 @@ func (s *Server) accept() {
 			continue
 		}
 		delay = 0
-		if uid, err := peerUID(conn); err != nil || uid != s.uid {
-			s.log.Warn("control: conexión de otro usuario rechazada", "uid", uid, "err", err)
+		if peer, err := peerOwner(conn); err != nil || peer != s.owner {
+			s.log.Warn("control: conexión de otro usuario rechazada", "peer", peer, "err", err)
 			conn.Close()
 			continue
 		}
@@ -313,26 +277,6 @@ func (s *Server) accept() {
 			s.serve(conn)
 		}()
 	}
-}
-
-func peerUID(conn *net.UnixConn) (int, error) {
-	raw, err := conn.SyscallConn()
-	if err != nil {
-		return -1, err
-	}
-	uid := -1
-	var credErr error
-	err = raw.Control(func(fd uintptr) {
-		var cred *syscall.Ucred
-		cred, credErr = syscall.GetsockoptUcred(int(fd), syscall.SOL_SOCKET, syscall.SO_PEERCRED)
-		if credErr == nil {
-			uid = int(cred.Uid)
-		}
-	})
-	if err == nil {
-		err = credErr
-	}
-	return uid, err
 }
 
 func (s *Server) track(c net.Conn) bool {

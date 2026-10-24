@@ -8,7 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"net"
-	"syscall"
+	"os"
 	"time"
 )
 
@@ -76,7 +76,7 @@ func (c Client) Watch(out io.Writer) error {
 func (c Client) send(req Request, timeout time.Duration) (net.Conn, *bufio.Reader, error) {
 	conn, err := net.DialTimeout("unix", c.Path, replyTimeout)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) {
+		if errors.Is(err, fs.ErrNotExist) || isRefused(err) || missing(c.Path) {
 			return nil, nil, fmt.Errorf("%w (sin socket en %s)", ErrNotRunning, c.Path)
 		}
 		return nil, nil, err
@@ -91,6 +91,13 @@ func (c Client) send(req Request, timeout time.Duration) (net.Conn, *bufio.Reade
 		return nil, nil, err
 	}
 	return conn, bufio.NewReader(conn), nil
+}
+
+// missing reports whether nothing is at path; Windows may report a missing
+// socket as another dial error.
+func missing(path string) bool {
+	_, err := os.Lstat(path)
+	return errors.Is(err, fs.ErrNotExist)
 }
 
 func readResponse(r *bufio.Reader) (Response, error) {
