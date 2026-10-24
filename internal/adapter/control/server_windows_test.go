@@ -19,28 +19,16 @@ func TestDirectoryIsPrivateToTheUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	want, err := windows.SecurityDescriptorFromString("D:P" + privateACE(self))
+	if err != nil {
+		t.Fatal(err)
+	}
 	sd, err := windows.GetNamedSecurityInfo(filepath.Dir(srv.Path()), windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !isPrivate(sd.String(), self) {
-		t.Fatalf("directory DACL = %s, want only %s", sd, privateACE(self))
-	}
-}
-
-func TestIsPrivate(t *testing.T) {
-	const sid = "S-1-5-21-1-2-3-1001"
-	for sddl, want := range map[string]bool{
-		"D:P(A;OICI;FA;;;" + sid + ")":                       true,
-		"D:PAI(A;OICI;FA;;;" + sid + ")":                     true,
-		"D:(A;OICI;FA;;;" + sid + ")":                        false, // inherits from the parent
-		"D:P(A;OICI;FA;;;" + sid + ")(A;OICI;FA;;;S-1-5-18)": false, // SYSTEM too
-		"D:P(A;OICI;FR;;;" + sid + ")":                       false,
-		"":                                                   false,
-	} {
-		if got := isPrivate(sddl, sid); got != want {
-			t.Errorf("isPrivate(%q) = %v, want %v", sddl, got, want)
-		}
+	if !isPrivate(sd.String(), want.String()) {
+		t.Fatalf("directory DACL = %s, want %s", sd, want)
 	}
 }
 

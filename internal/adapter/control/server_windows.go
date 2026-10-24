@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -49,15 +48,15 @@ func privateDir(dir string) error {
 	if err != nil {
 		return err
 	}
-	sd, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-	if err == nil && isPrivate(sd.String(), self) {
-		return nil
-	}
-	sd, err = windows.SecurityDescriptorFromString("D:P" + privateACE(self))
+	want, err := windows.SecurityDescriptorFromString("D:P" + privateACE(self))
 	if err != nil {
 		return err
 	}
-	dacl, _, err := sd.DACL()
+	sd, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err == nil && isPrivate(sd.String(), want.String()) {
+		return nil
+	}
+	dacl, _, err := want.DACL()
 	if err != nil {
 		return err
 	}
@@ -67,18 +66,6 @@ func privateDir(dir string) error {
 		return fmt.Errorf("%s: no se pudo restringir al usuario: %w", dir, err)
 	}
 	return nil
-}
-
-// privateACE grants sid full access, inherited by files and subdirectories.
-func privateACE(sid owner) string {
-	return "(A;OICI;FA;;;" + sid + ")"
-}
-
-// isPrivate reports whether sddl is a protected DACL with privateACE alone;
-// Windows may add the auto-inherited flag (AI) when it stores it.
-func isPrivate(sddl string, sid owner) bool {
-	rest, ok := strings.CutPrefix(sddl, "D:P")
-	return ok && strings.TrimPrefix(rest, "AI") == privateACE(sid)
 }
 
 // privateSocket does nothing: the socket inherits the ACL of its directory.
