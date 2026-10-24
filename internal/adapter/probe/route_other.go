@@ -1,4 +1,4 @@
-//go:build !linux
+//go:build !linux && !windows
 
 package probe
 
@@ -14,7 +14,7 @@ type route struct {
 
 func (r route) linkUp() bool { return false }
 
-// defaultRoute is implemented per OS; Windows arrives in M6.
+// defaultRoute is implemented per OS.
 func defaultRoute() (route, error) {
 	return route{}, errors.New("default route lookup is not implemented on this OS")
 }

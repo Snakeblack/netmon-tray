@@ -1,6 +1,6 @@
 // Package probe measures each network layer without privileges: ICMP echo
-// through unprivileged ping sockets, and a DNS query through the system
-// resolver (ADR 0004).
+// through unprivileged ping sockets (IcmpSendEcho on Windows), and a DNS
+// query through the system resolver (ADR 0004).
 package probe
 
 import (
@@ -10,12 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"sync"
 	"time"
-
-	"golang.org/x/net/icmp"
-	"golang.org/x/net/ipv4"
 
 	"github.com/Snakeblack/netmon-tray/internal/domain"
 )
@@ -50,11 +46,9 @@ type Prober struct {
 
 // New checks that unprivileged ICMP is available and returns a prober.
 func New(cfg Config) (*Prober, error) {
-	conn, err := icmp.ListenPacket("udp4", "0.0.0.0")
-	if err != nil {
-		return nil, fmt.Errorf("unprivileged ICMP is not available (check net.ipv4.ping_group_range): %w", err)
+	if err := checkICMP(); err != nil {
+		return nil, fmt.Errorf("unprivileged ICMP is not available: %w", err)
 	}
-	conn.Close()
 	return &Prober{
 		cfg:      cfg,
 		resolver: &net.Resolver{PreferGo: true},
@@ -122,52 +116,4 @@ func (p *Prober) resolves(ctx context.Context) bool {
 	_, err := p.resolver.LookupHost(ctx, "netmon-"+hex.EncodeToString(b[:])+"."+p.cfg.DNSZone)
 	var dnsErr *net.DNSError
 	return err == nil || (errors.As(err, &dnsErr) && dnsErr.IsNotFound)
-}
-
-// ping sends one ICMP echo through an unprivileged datagram socket and waits
-// for the reply.
-func ping(ctx context.Context, addr string, timeout time.Duration) bool {
-	ip := net.ParseIP(addr)
-	if ip == nil {
-		return false
-	}
-	conn, err := icmp.ListenPacket("udp4", "0.0.0.0")
-	if err != nil {
-		return false
-	}
-	defer conn.Close()
-
-	deadline := time.Now().Add(timeout)
-	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
-		deadline = d
-	}
-	conn.SetDeadline(deadline)
-
-	seq := os.Getpid() & 0xffff
-	msg := icmp.Message{
-		Type: ipv4.ICMPTypeEcho,
-		Body: &icmp.Echo{ID: seq, Seq: seq, Data: []byte("netmon")},
-	}
-	wire, err := msg.Marshal(nil)
-	if err != nil {
-		return false
-	}
-	if _, err := conn.WriteTo(wire, &net.UDPAddr{IP: ip}); err != nil {
-		return false
-	}
-
-	buf := make([]byte, 1500)
-	for {
-		n, _, err := conn.ReadFrom(buf)
-		if err != nil {
-			return false
-		}
-		reply, err := icmp.ParseMessage(1, buf[:n])
-		if err != nil {
-			continue
-		}
-		if reply.Type == ipv4.ICMPTypeEchoReply {
-			return true
-		}
-	}
 }
