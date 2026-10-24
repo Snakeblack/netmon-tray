@@ -1,6 +1,6 @@
 # netmon-tray
 
-Monitor de cortes de red para Linux. Vigila la conexión por capas (enlace, router, internet y DNS), registra cada corte con la capa que falla y guarda 2 meses de historial que puedes exportar a CSV y JSON para reclamar al operador. Muestra el estado en un icono de bandeja (StatusNotifierItem) y, en Omarchy, en su propio [panel de la barra](#panel-de-omarchy).
+Monitor de cortes de red para Linux y [Windows](#windows). Vigila la conexión por capas (enlace, router, internet y DNS), registra cada corte con la capa que falla y guarda 2 meses de historial que puedes exportar a CSV y JSON para reclamar al operador. Muestra el estado en un icono de bandeja (StatusNotifierItem) y, en Omarchy, en su propio [panel de la barra](#panel-de-omarchy).
 
 Funciona sin root, sin puertos de escucha y sin nube: todo se queda en tu equipo.
 
@@ -53,6 +53,47 @@ netmon-tray plugin install    # actualiza el panel si ha cambiado
 
 Para desinstalar: `netmon-tray service remove` para el motor, lo deshabilita y borra la unidad; `omarchy plugin remove snakeblack.netmon-tray` quita el panel, y `rm ~/.local/bin/netmon-tray` el binario. El historial y las exportaciones siguen en `~/.local/share/netmon-tray/`.
 
+## Windows
+
+En Windows hace lo mismo con otra presentación: el icono de la bandeja y su menú, sin panel. Funciona sin administrador en Windows 10 (1803 o posterior) y Windows 11.
+
+1. Descarga de [Releases](https://github.com/Snakeblack/netmon-tray/releases) el `.zip` de tu arquitectura (`windows-amd64` o `windows-arm64`), comprueba su suma y descomprímelo en una carpeta tuya (cambia la versión por la que descargues):
+
+   ```powershell
+   (Get-FileHash netmon-tray-v0.2.0-windows-amd64.zip -Algorithm SHA256).Hash   # compárala con SHA256SUMS
+   Expand-Archive netmon-tray-v0.2.0-windows-amd64.zip "$env:LOCALAPPDATA\Programs"
+   cd "$env:LOCALAPPDATA\Programs\netmon-tray-v0.2.0-windows-amd64"
+   ```
+
+   Trae dos binarios: `netmon-tray.exe`, de consola, para `ctl`, `service` y `version`, y `netmon-trayw.exe`, el motor sin ventana de consola.
+
+2. Arranca el motor con la sesión, desde esa carpeta:
+
+   ```powershell
+   .\netmon-tray.exe service install
+   ```
+
+`service install` registra `netmon-trayw.exe` en `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (valor `netmon-tray`), que Windows lee al iniciar sesión, y lo arranca si no hay un motor en marcha. No necesita administrador ni crea un servicio de Windows: un servicio corre fuera de tu sesión y no podría mostrar el icono. A diferencia de la unidad de systemd, el motor no se relanza solo si falla; vuelve con la siguiente sesión. Si `netmon-trayw.exe` no está junto a `netmon-tray.exe`, sale con 1 y no registra nada.
+
+Con Go, `go install` solo genera el binario de consola. Desde un clon del repositorio, compila los dos en la misma carpeta:
+
+```powershell
+go build -o netmon-tray.exe ./cmd/netmon-tray
+go build -ldflags=-H=windowsgui -o netmon-trayw.exe ./cmd/netmon-tray
+```
+
+En Windows cambian estas rutas:
+
+| | Windows |
+| --- | --- |
+| Historial y exportaciones | `%LOCALAPPDATA%\netmon-tray\` (`history.db` y `exports\`) |
+| Socket de control | `%LOCALAPPDATA%\netmon-tray\control.sock` |
+| Registro | `%LOCALAPPDATA%\netmon-tray\netmon-tray.log`; al arrancar, si pasa de 1 MiB, pasa a `netmon-tray.log.old` |
+
+`ctl` funciona igual. El motor pone en `%LOCALAPPDATA%\netmon-tray` una ACL protegida solo para tu usuario y, además, rechaza cada conexión cuyo proceso sea de otro usuario. `netmon-tray plugin` no existe en Windows: sale con 2.
+
+Para actualizar, sustituye los dos binarios tras cerrar el motor con **Salir** y repite `service install`. Para desinstalar, `.\netmon-tray.exe service remove` quita el registro de arranque; cierra el motor con **Salir** y borra la carpeta de los binarios. El historial sigue en `%LOCALAPPDATA%\netmon-tray\`.
+
 ## Cómo mide
 
 Cada 2 s, el motor mide las capas de la más cercana a la más lejana. Solo mide una capa si las anteriores responden:
@@ -60,7 +101,7 @@ Cada 2 s, el motor mide las capas de la más cercana a la más lejana. Solo mide
 | Capa | Cómo se mide |
 | --- | --- |
 | Enlace | Hay ruta por defecto y su interfaz está activa (wifi o ethernet) |
-| Router | Ping a la puerta de enlace de esa ruta |
+| Router | Ping a la puerta de enlace de esa ruta (en Windows, con `IcmpSendEcho`, como `ping.exe`) |
 | Internet | Ping a `1.1.1.1` y `8.8.8.8`; basta con que responda uno |
 | DNS | Una consulta a un nombre aleatorio bajo `example.com`, como mucho cada 10 s, que el resolvedor no puede tener en caché |
 
@@ -141,10 +182,11 @@ journalctl --user -u netmon-tray -f
 ```sh
 go test ./...
 go vet ./...
+GOOS=windows go vet ./...
 node --test omarchy-plugin/
 ```
 
-Los tests son offline: las sondas y la bandeja quedan fuera, y el dominio se prueba con secuencias de sondeos simuladas. La lógica del panel vive en `omarchy-plugin/Model.js` y se prueba con node, sin Quickshell. Un tag `v*` ejecuta los tests en GitHub Actions y publica los binarios `linux-amd64` y `linux-arm64` con su `SHA256SUMS` en Releases.
+Los tests son offline: las sondas y la bandeja quedan fuera, y el dominio se prueba con secuencias de sondeos simuladas. La lógica del panel vive en `omarchy-plugin/Model.js` y se prueba con node, sin Quickshell. El código de Windows se comprueba aquí con `GOOS=windows go vet ./...`, y sus tests corren en GitHub Actions en `windows-latest`. Un tag `v*` ejecuta los tests en Linux y en Windows y publica en Releases los binarios `linux-amd64`, `linux-arm64`, `windows-amd64` y `windows-arm64` con su `SHA256SUMS`.
 
 ## Licencia
 

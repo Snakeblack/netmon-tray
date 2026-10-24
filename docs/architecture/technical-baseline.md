@@ -19,7 +19,7 @@ Herramienta local de escritorio, dedicada a Omarchy y con Windows como segundo o
 | Adaptador de sondas | Ejecuta las sondas por capa sin privilegios (ADR 0004) | Ninguno |
 | Almacén de historial | Archivo local versionado con retención de 60 días (ADR 0003) | Cortes y estados; único escritor: el motor |
 | Contrato de control | Estado, suscripción y órdenes para las interfaces (ADR 0005) | Ninguno |
-| Adaptadores de presentación | Icono SNI y panel de Omarchy; en Windows, otros (ADR 0002) | Ninguno |
+| Adaptadores de presentación | Icono SNI y panel de Omarchy; en Windows, el icono de la bandeja con su menú (ADR 0002) | Ninguno |
 
 ## Integrations
 
@@ -28,6 +28,7 @@ Herramienta local de escritorio, dedicada a Omarchy y con Windows como segundo o
 | Objetivos de sondeo | Operador / terceros | ICMP, DNS, TCP | Sin respuesta es la señal medida; se distingue de un fallo local por capas |
 | Barra de Omarchy | Omarchy | StatusNotifierItem sobre D-Bus; plugin QML | Sin barra, el motor sigue registrando; la interfaz se degrada |
 | Servicio de usuario | systemd --user (Linux) | Unidad de usuario | Sin arranque automático no hay registro; se relanza si falla |
+| Arranque con la sesión | Windows | Clave `Run` de `HKCU` con `netmon-trayw.exe` | Sin arranque automático no hay registro; no se relanza si falla |
 
 ## Quality scenarios
 
