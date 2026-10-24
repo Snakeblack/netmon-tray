@@ -1,0 +1,984 @@
+{
+  "schema": "idd-state/v1",
+  "change": "m6-windows",
+  "mode": "idd",
+  "status": "closed",
+  "intent": {
+    "request": "continua",
+    "kind": "feature",
+    "summary": "M6: netmon-tray compila y funciona en Windows con las mismas funciones: motor, sondas sin privilegios, historial con bloqueo, contrato de control v1, icono de bandeja, arranque con la sesión y binarios de Windows en el release",
+    "acceptance": "GOOS=windows go build y go vet pasan; en Windows el motor sondea sin privilegios, guarda el historial, muestra el icono de bandeja, atiende netmon-tray ctl con el contrato v1, rechaza un segundo motor y service install/remove lo arranca con la sesión; el release publica binarios de Windows"
+  },
+  "facts": {
+    "coverage": [
+      {
+        "category": "inputs",
+        "question": "\"¿Qué canal de control usa el motor en Windows para ctl (socket AF_UNIX en %LOCALAPPDATA%, named pipe con DACL del usuario o ninguno)?\""
+      },
+      {
+        "category": "uniqueness",
+        "cite": {
+          "kind": "path",
+          "path": "cmd/netmon-tray/main.go",
+          "line": 71
+        }
+      },
+      {
+        "category": "persistence",
+        "question": "\"¿Dónde viven en Windows el historial, las exportaciones y el log, y cómo se acota el log sin systemd?\""
+      },
+      {
+        "category": "copy",
+        "question": "\"¿Con qué mecanismo arranca netmon-tray service install el motor con la sesión de Windows (clave Run de HKCU, tarea programada con reinicio o carpeta Inicio)?\""
+      },
+      {
+        "category": "url-state",
+        "cite": {
+          "kind": "path",
+          "path": "docs/product/brief.md",
+          "line": 33
+        }
+      },
+      {
+        "category": "accessibility",
+        "cite": {
+          "kind": "path",
+          "path": "internal/adapter/tray/tray.go",
+          "line": 110
+        }
+      },
+      {
+        "category": "errors",
+        "question": "\"¿Qué hace netmon-tray plugin en Windows, y qué verificación cuenta para cerrar (CI en windows-latest, check local con GOOS=windows, prueba manual en un Windows real)?\""
+      }
+    ]
+  },
+  "plan": {
+    "paths": [
+      ".github/workflows/ci.yml",
+      ".github/workflows/release.yml",
+      "README.md",
+      "cmd/netmon-tray/history_test.go",
+      "cmd/netmon-tray/main.go",
+      "cmd/netmon-tray/platform_unix.go",
+      "cmd/netmon-tray/platform_windows.go",
+      "docs/architecture/technical-baseline.md",
+      "docs/roadmap.md",
+      "go.mod",
+      "idd/config.yaml",
+      "internal/adapter/control/client.go",
+      "internal/adapter/control/server.go",
+      "internal/adapter/control/server_test.go",
+      "internal/adapter/control/server_unix.go",
+      "internal/adapter/control/server_unix_test.go",
+      "internal/adapter/control/server_windows.go",
+      "internal/adapter/control/server_windows_test.go",
+      "internal/adapter/export/export_test.go",
+      "internal/adapter/filelock/filelock.go",
+      "internal/adapter/filelock/filelock_test.go",
+      "internal/adapter/filelock/lock_unix.go",
+      "internal/adapter/filelock/lock_windows.go",
+      "internal/adapter/logging/logging.go",
+      "internal/adapter/logging/logging_test.go",
+      "internal/adapter/omarchy/install_test.go",
+      "internal/adapter/probe/ping_unix.go",
+      "internal/adapter/probe/ping_windows.go",
+      "internal/adapter/probe/probe.go",
+      "internal/adapter/probe/route_other.go",
+      "internal/adapter/probe/route_pick.go",
+      "internal/adapter/probe/route_pick_test.go",
+      "internal/adapter/probe/route_windows.go",
+      "internal/adapter/runkey/registry_windows.go",
+      "internal/adapter/runkey/runkey.go",
+      "internal/adapter/runkey/runkey_test.go",
+      "internal/adapter/storage/lock.go",
+      "internal/adapter/storage/sqlite.go",
+      "internal/adapter/storage/sqlite_test.go",
+      "internal/adapter/systemd/service_test.go"
+    ],
+    "work_units": 7,
+    "decision": true,
+    "operations": []
+  },
+  "signals": [
+    {
+      "id": "always",
+      "reason": "every change with a resolved intent",
+      "source": "declaration"
+    },
+    {
+      "id": "multi-unit-or-decision",
+      "reason": "declared 7 work units",
+      "source": "declaration"
+    },
+    {
+      "id": "persistent-data",
+      "reason": "persistent data: touches internal/adapter/storage/lock.go and 2 more (matches internal/adapter/storage/**)",
+      "source": "declaration"
+    },
+    {
+      "id": "security-boundary",
+      "reason": "security boundary: touches internal/adapter/control/client.go and 13 more (matches internal/adapter/control/**)",
+      "source": "declaration"
+    },
+    {
+      "id": "adr-or-quality-attribute",
+      "reason": "declared ADR 0001, 0002, 0003, 0004, 0005 and quality scenario live-status, minimal-footprint, short-outage-detection",
+      "source": "declaration"
+    }
+  ],
+  "impacts": [
+    {
+      "kind": "adr",
+      "id": "0001",
+      "impact": "conforms",
+      "reason": "En Windows sigue habiendo un único motor por usuario: LockFileEx sobre history.db.lock y control.lock excluye a un segundo, que sale con 4; la clave Run lo arranca con la sesión"
+    },
+    {
+      "kind": "adr",
+      "id": "0002",
+      "impact": "conforms",
+      "reason": "Windows se añade solo con adaptadores por sistema (filelock, control, probe, runkey, cmd) tras los mismos puertos; el dominio y app no cambian"
+    },
+    {
+      "kind": "adr",
+      "id": "0003",
+      "impact": "conforms",
+      "reason": "El historial mantiene un único escritor (bloqueo exclusivo con flock o LockFileEx) y el mismo esquema versionado; sin migración"
+    },
+    {
+      "kind": "adr",
+      "id": "0004",
+      "impact": "conforms",
+      "reason": "En Windows el ICMP sin privilegios es IcmpSendEcho de iphlpapi, como ping.exe, y la ruta sale de GetIpForwardTable2; DNS igual; sin administrador ni puertos en red"
+    },
+    {
+      "kind": "adr",
+      "id": "0005",
+      "impact": "conforms",
+      "reason": "El contrato v1 no cambia; en Windows va por el mismo socket AF_UNIX, solo del usuario por ACL protegida y comprobación del SID del par, como permite la consecuencia del ADR"
+    },
+    {
+      "kind": "scenario",
+      "id": "live-status",
+      "impact": "conforms",
+      "reason": "El icono de bandeja y ctl watch reciben el estado del motor igual que en Linux"
+    },
+    {
+      "kind": "scenario",
+      "id": "minimal-footprint",
+      "impact": "conforms",
+      "reason": "Un IcmpSendEcho por objetivo y sondeo, sin procesos externos; el log de Windows se limita a unos 2 MiB"
+    },
+    {
+      "kind": "scenario",
+      "id": "short-outage-detection",
+      "impact": "conforms",
+      "reason": "Mismo clasificador y sondeo cada 2 s; en Windows cambian solo las sondas de enlace y ping"
+    }
+  ],
+  "attestations": [
+    {
+      "kind": "adr",
+      "id": "0001",
+      "evidence": "Revisado: cmd/netmon-tray/main.go sigue siendo el único punto de entrada; platform_windows.go solo añade rutas, log, plugin y service. El único manejador de la bandeja (Exportar historial) hace E/S de fichero, no de red; Windows no añade manejadores.",
+      "recorded_at": "2026-10-24T01:41:18.406Z"
+    },
+    {
+      "kind": "adr",
+      "id": "0003",
+      "evidence": "go test ./... en Linux: TestHistorySurvivesRestartRotatesAndExports (cmd/netmon-tray) reabre el almacén tras reinicio, rota a 60 días y exporta; las pruebas de migración y de dueño único de storage pasan con filelock. En Windows esas mismas pruebas corren en el job windows-latest, aún no ejecutado.",
+      "recorded_at": "2026-10-24T01:41:18.465Z"
+    },
+    {
+      "kind": "adr",
+      "id": "0004",
+      "evidence": "Pruebas del clasificador en internal/domain (corte de pocos segundos incluido) pasan sin cambios. Revisado: ninguna sonda requiere privilegios; en Windows ping usa IcmpSendEcho de iphlpapi (como ping.exe) y la ruta GetIpForwardTable2/GetIfEntry2Ex, sin administrador; la revisión de confianza no encontró nada.",
+      "recorded_at": "2026-10-24T01:41:18.523Z"
+    },
+    {
+      "kind": "adr",
+      "id": "0005",
+      "evidence": "En Linux pasan TestWatchSendsCurrentStateThenEachChange y TestRejectsOtherUsers (ahora con foreignOwner por sistema). En Windows, TestRejectsOtherUsers con el SID S-1-0-0, TestDirectoryIsPrivateToTheUser y TestCurrentOwnerIsThisProcessUser están escritas y pasan GOOS=windows go vet; su ejecución queda para el job windows-latest.",
+      "recorded_at": "2026-10-24T01:41:18.582Z"
+    },
+    {
+      "kind": "scenario",
+      "id": "live-status",
+      "evidence": "TestWatchSendsCurrentStateThenEachChange pasa en Linux; el icono de bandeja recibe Publish igual en Windows (mismo adaptador fyne.io/systray). Ningún manejador de interfaz hace E/S de red síncrona (revisado en main.go y tray.go).",
+      "recorded_at": "2026-10-24T01:41:18.643Z"
+    },
+    {
+      "kind": "scenario",
+      "id": "minimal-footprint",
+      "evidence": "Revisado: el sondeo sigue a intervalo fijo de 2 s; en Windows cada ping es un IcmpSendEcho con 6 bytes de datos y el DNS como mucho cada 10 s; el log de Windows se limita a unos 2 MiB. La medición de CPU/RAM en Windows queda para la prueba manual en un equipo real.",
+      "recorded_at": "2026-10-24T01:41:18.703Z"
+    },
+    {
+      "kind": "scenario",
+      "id": "short-outage-detection",
+      "evidence": "Las pruebas del clasificador con secuencias simuladas por capa, incluido un corte de pocos segundos (TestTrackerClosesShortOutageWithMeasuredDuration), pasan; el dominio no cambia en M6.",
+      "recorded_at": "2026-10-24T01:41:18.764Z"
+    }
+  ],
+  "obligations": [
+    {
+      "id": "checks-pass",
+      "signal": "always",
+      "status": "satisfied",
+      "evidence": [
+        "ev-5"
+      ]
+    },
+    {
+      "id": "living-doc",
+      "signal": "multi-unit-or-decision",
+      "status": "satisfied",
+      "evidence": [
+        "ev-9"
+      ]
+    },
+    {
+      "id": "migration-compat-and-test",
+      "signal": "persistent-data",
+      "status": "satisfied",
+      "evidence": [
+        "ev-7"
+      ]
+    },
+    {
+      "id": "trust-review",
+      "signal": "security-boundary",
+      "status": "satisfied",
+      "evidence": [
+        "ev-8"
+      ]
+    },
+    {
+      "id": "adr-impact-declaration",
+      "signal": "adr-or-quality-attribute",
+      "status": "satisfied",
+      "evidence": [
+        "ev-6"
+      ]
+    }
+  ],
+  "gates": [
+    {
+      "id": "open-facts",
+      "status": "resolved",
+      "answer": "todas las recomendadas: socket AF_UNIX en %LOCALAPPDATA%\\netmon-tray con ACL solo del usuario; historial, exportaciones y log en %LOCALAPPDATA%\\netmon-tray, log recortado al arrancar si pasa de 1 MiB, binario windowsgui con subcomandos enganchados a la consola padre; service install con la clave Run de HKCU; plugin sale con 2 'no disponible en Windows' y no sale en el uso; check local GOOS=windows go vet, job windows-latest en CI y prueba manual en Windows real; release con windows-amd64 y windows-arm64 en zip",
+      "source": "user"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "ev-1",
+      "kind": "migration-test",
+      "obligation": "migration-compat-and-test",
+      "recorded_at": "2026-10-24T01:35:02.666Z",
+      "detail": {
+        "run": "run-1",
+        "tree": "sha256:af035690d27702e588efdbe843638b9c9a8e5c614dbb680fccb75f177fec7291",
+        "plan": "Sin cambio de esquema: history.db y sus migraciones quedan igual. El bloqueo de dueño sigue en history.db.lock con flock en Linux, así que v0.1.0 y el binario nuevo se excluyen entre sí. Rollback: volver a v0.1.0 abre el mismo history.db sin migrar nada."
+      }
+    },
+    {
+      "id": "ev-2",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-24T01:35:19.890Z",
+      "detail": {
+        "tree": "sha256:d6af856380f93e4438c25737c000945d3c710734b68102bf7169ef982b0f9434",
+        "runs": [
+          "run-2",
+          "run-3",
+          "run-4",
+          "run-5"
+        ]
+      }
+    },
+    {
+      "id": "ev-3",
+      "kind": "adr-impact-declaration",
+      "obligation": "adr-impact-declaration",
+      "recorded_at": "2026-10-24T01:35:19.890Z",
+      "detail": {
+        "refs": [
+          "adr:0001 conforms",
+          "adr:0002 conforms",
+          "adr:0003 conforms",
+          "adr:0004 conforms",
+          "adr:0005 conforms",
+          "scenario:live-status conforms",
+          "scenario:minimal-footprint conforms",
+          "scenario:short-outage-detection conforms"
+        ],
+        "records": [],
+        "tree": "sha256:d6af856380f93e4438c25737c000945d3c710734b68102bf7169ef982b0f9434",
+        "fitness": [
+          "run-6"
+        ]
+      }
+    },
+    {
+      "id": "ev-4",
+      "kind": "frozen-review",
+      "obligation": "trust-review",
+      "recorded_at": "2026-10-24T01:40:00.345Z",
+      "detail": {
+        "lineage_id": "sha256:8307a6a17f0835b5a8f1d2f7c1cc42c14bdc6370d226bafb4810fecd0ee87139",
+        "candidate_id": "sha256:528608d9caf8ecc65e361c447ac94a72d864466d6642499afe42d1b665c8e218",
+        "candidate_tree": "e4aad5a09a33d483f0ec09cb647ff78ac890cffb",
+        "findings_digest": "sha256:45e3cd563506931cd930120f1e3210f356d8d4f6ee8853efb0629336bfc648c3",
+        "attestation": "subagent-stop",
+        "receipt": {
+          "agent": "review-trust",
+          "recorded_at": "2026-10-24T01:39:38.846Z",
+          "result_digest": "sha256:d5b7ec5565f771704ee2727d46547d02ca5e3ffae1cd31ca31e78502a03382d2"
+        }
+      }
+    },
+    {
+      "id": "ev-5",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-24T01:40:23.326Z",
+      "detail": {
+        "tree": "sha256:3a7b06c81e67299df3876ddc119c59971172cd1f389e7af5fa5d26df51f409dd",
+        "runs": [
+          "run-7",
+          "run-8",
+          "run-9",
+          "run-10"
+        ]
+      }
+    },
+    {
+      "id": "ev-6",
+      "kind": "adr-impact-declaration",
+      "obligation": "adr-impact-declaration",
+      "recorded_at": "2026-10-24T01:40:23.326Z",
+      "detail": {
+        "refs": [
+          "adr:0001 conforms",
+          "adr:0002 conforms",
+          "adr:0003 conforms",
+          "adr:0004 conforms",
+          "adr:0005 conforms",
+          "scenario:live-status conforms",
+          "scenario:minimal-footprint conforms",
+          "scenario:short-outage-detection conforms"
+        ],
+        "records": [],
+        "tree": "sha256:3a7b06c81e67299df3876ddc119c59971172cd1f389e7af5fa5d26df51f409dd",
+        "fitness": [
+          "run-11"
+        ]
+      }
+    },
+    {
+      "id": "ev-7",
+      "kind": "migration-test",
+      "obligation": "migration-compat-and-test",
+      "recorded_at": "2026-10-24T01:40:30.603Z",
+      "detail": {
+        "run": "run-12",
+        "tree": "sha256:575295381f986a269dca3360fecdd19eee6aa91db46fac31c53832ef6ff90256",
+        "plan": "Sin cambio de esquema: history.db y sus migraciones quedan igual. El bloqueo de dueño sigue en history.db.lock con flock en Linux, así que v0.1.0 y el binario nuevo se excluyen entre sí. Rollback: volver a v0.1.0 abre el mismo history.db sin migrar nada."
+      }
+    },
+    {
+      "id": "ev-8",
+      "kind": "frozen-review",
+      "obligation": "trust-review",
+      "recorded_at": "2026-10-24T01:41:02.194Z",
+      "detail": {
+        "lineage_id": "sha256:30bf090d81826e6afe22b641f446683221e74f48f586053c3740b50e66e5a49d",
+        "candidate_id": "sha256:dfe039d1d4a5784285ac851c61a73b1a4521d448a15dd2a3ab701815c099a15f",
+        "candidate_tree": "460d2b47c65f7007d1a33df9ac0065fe21bf0679",
+        "findings_digest": "sha256:4d59fd4aa8eefff6dbf7cd085cc100ee928217573658f8bbc301aa4a3f1adc0f",
+        "attestation": "relayed"
+      }
+    },
+    {
+      "id": "ev-9",
+      "kind": "living-doc-current",
+      "obligation": "living-doc",
+      "recorded_at": "2026-10-24T01:41:25.608Z"
+    }
+  ],
+  "base": "2adf82c8b4fa0bfc95c220e26e1e92a47f164220",
+  "runs": [
+    {
+      "id": "run-1",
+      "purpose": "migration-test",
+      "command": "go test -count=1 ./internal/adapter/storage/ ./internal/adapter/filelock/",
+      "exit_code": 0,
+      "output_sha256": "sha256:45ff19058c50d7e5d815ce2292ad2c696e0aa959904862f0ee14f4beaf9e269c",
+      "tree": "sha256:af035690d27702e588efdbe843638b9c9a8e5c614dbb680fccb75f177fec7291",
+      "recorded_at": "2026-10-24T01:35:02.666Z"
+    },
+    {
+      "id": "run-2",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:9901d05cec53a5b004401d4f48eb8d7763fc383fa576fd349c640b83cfdc7855",
+      "tree": "sha256:d6af856380f93e4438c25737c000945d3c710734b68102bf7169ef982b0f9434",
+      "recorded_at": "2026-10-24T01:35:19.890Z"
+    },
+    {
+      "id": "run-3",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:d6af856380f93e4438c25737c000945d3c710734b68102bf7169ef982b0f9434",
+      "recorded_at": "2026-10-24T01:35:19.890Z"
+    },
+    {
+      "id": "run-4",
+      "purpose": "checks",
+      "name": "plugin",
+      "command": "node --test omarchy-plugin/",
+      "exit_code": 0,
+      "output_sha256": "sha256:9cee067a17bd19ffe046b576c140bdacb2858677ad4757ef29de21a09933bfca",
+      "tree": "sha256:d6af856380f93e4438c25737c000945d3c710734b68102bf7169ef982b0f9434",
+      "recorded_at": "2026-10-24T01:35:19.890Z",
+      "tests": 17
+    },
+    {
+      "id": "run-5",
+      "purpose": "checks",
+      "name": "windows-vet",
+      "command": "env GOOS=windows go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:d6af856380f93e4438c25737c000945d3c710734b68102bf7169ef982b0f9434",
+      "recorded_at": "2026-10-24T01:35:19.890Z"
+    },
+    {
+      "id": "run-6",
+      "purpose": "fitness",
+      "ref": "adr:0002",
+      "command": "! go list -deps ./internal/domain/... | grep -E 'internal/adapter|dbus|systemd'",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:d6af856380f93e4438c25737c000945d3c710734b68102bf7169ef982b0f9434",
+      "recorded_at": "2026-10-24T01:35:19.890Z"
+    },
+    {
+      "id": "run-7",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:9901d05cec53a5b004401d4f48eb8d7763fc383fa576fd349c640b83cfdc7855",
+      "tree": "sha256:3a7b06c81e67299df3876ddc119c59971172cd1f389e7af5fa5d26df51f409dd",
+      "recorded_at": "2026-10-24T01:40:23.326Z"
+    },
+    {
+      "id": "run-8",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:3a7b06c81e67299df3876ddc119c59971172cd1f389e7af5fa5d26df51f409dd",
+      "recorded_at": "2026-10-24T01:40:23.326Z"
+    },
+    {
+      "id": "run-9",
+      "purpose": "checks",
+      "name": "plugin",
+      "command": "node --test omarchy-plugin/",
+      "exit_code": 0,
+      "output_sha256": "sha256:f60bb4f516cf66e2ec939415488aacfed036e0cefd2855a9b933cac706f207fb",
+      "tree": "sha256:3a7b06c81e67299df3876ddc119c59971172cd1f389e7af5fa5d26df51f409dd",
+      "recorded_at": "2026-10-24T01:40:23.326Z",
+      "tests": 17
+    },
+    {
+      "id": "run-10",
+      "purpose": "checks",
+      "name": "windows-vet",
+      "command": "env GOOS=windows go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:3a7b06c81e67299df3876ddc119c59971172cd1f389e7af5fa5d26df51f409dd",
+      "recorded_at": "2026-10-24T01:40:23.326Z"
+    },
+    {
+      "id": "run-11",
+      "purpose": "fitness",
+      "ref": "adr:0002",
+      "command": "! go list -deps ./internal/domain/... | grep -E 'internal/adapter|dbus|systemd'",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:3a7b06c81e67299df3876ddc119c59971172cd1f389e7af5fa5d26df51f409dd",
+      "recorded_at": "2026-10-24T01:40:23.326Z"
+    },
+    {
+      "id": "run-12",
+      "purpose": "migration-test",
+      "command": "go test -count=1 ./internal/adapter/storage/ ./internal/adapter/filelock/",
+      "exit_code": 0,
+      "output_sha256": "sha256:99106fcbe9087baec6cb674a7d84d64552883902727a677a72d5391671ee2416",
+      "tree": "sha256:575295381f986a269dca3360fecdd19eee6aa91db46fac31c53832ef6ff90256",
+      "recorded_at": "2026-10-24T01:40:30.603Z"
+    }
+  ],
+  "reviews": [
+    {
+      "schema_version": 2,
+      "lineage_id": "sha256:8307a6a17f0835b5a8f1d2f7c1cc42c14bdc6370d226bafb4810fecd0ee87139",
+      "generation": 1,
+      "predecessor_lineage_id": null,
+      "migration": null,
+      "recovery": null,
+      "revision": 3,
+      "status": "approved",
+      "genesis": {
+        "candidate": {
+          "projection": "idd-tree-diff/v1",
+          "base_tree": "7e2f99705cac40cfad8e9ed4b88a316c33d8206f",
+          "candidate_tree": "e4aad5a09a33d483f0ec09cb647ff78ac890cffb",
+          "paths": [
+            ".github/workflows/ci.yml",
+            ".github/workflows/release.yml",
+            "README.md",
+            "cmd/netmon-tray/main.go",
+            "cmd/netmon-tray/platform_unix.go",
+            "cmd/netmon-tray/platform_windows.go",
+            "docs/architecture/technical-baseline.md",
+            "docs/contract/control-v1.md",
+            "docs/roadmap.md",
+            "go.mod",
+            "internal/adapter/control/client.go",
+            "internal/adapter/control/server.go",
+            "internal/adapter/control/server_test.go",
+            "internal/adapter/control/server_unix.go",
+            "internal/adapter/control/server_unix_test.go",
+            "internal/adapter/control/server_windows.go",
+            "internal/adapter/control/server_windows_test.go",
+            "internal/adapter/export/export_test.go",
+            "internal/adapter/filelock/filelock.go",
+            "internal/adapter/filelock/filelock_test.go",
+            "internal/adapter/filelock/lock_unix.go",
+            "internal/adapter/filelock/lock_windows.go",
+            "internal/adapter/logging/logging.go",
+            "internal/adapter/logging/logging_test.go",
+            "internal/adapter/omarchy/install_test.go",
+            "internal/adapter/probe/ping_unix.go",
+            "internal/adapter/probe/ping_windows.go",
+            "internal/adapter/probe/probe.go",
+            "internal/adapter/probe/route_other.go",
+            "internal/adapter/probe/route_pick.go",
+            "internal/adapter/probe/route_pick_test.go",
+            "internal/adapter/probe/route_windows.go",
+            "internal/adapter/runkey/registry_windows.go",
+            "internal/adapter/runkey/runkey.go",
+            "internal/adapter/runkey/runkey_test.go",
+            "internal/adapter/storage/lock.go",
+            "internal/adapter/storage/sqlite.go",
+            "internal/adapter/storage/sqlite_test.go",
+            "internal/adapter/systemd/service_test.go"
+          ],
+          "diff_hash": "sha256:a047ca35ae5251a3bdd7cb65229300d9f5a1149379ffd3bb2acc5173b086a234",
+          "paths_digest": "sha256:8f94ced5f5f88c3829efa5fc8cfba8376feff483cc84c3f0c08d307b4c483e60",
+          "authored_lines": 1560,
+          "original_changed_lines": 1884
+        },
+        "candidate_id": "sha256:528608d9caf8ecc65e361c447ac94a72d864466d6642499afe42d1b665c8e218",
+        "paths": [
+          ".github/workflows/ci.yml",
+          ".github/workflows/release.yml",
+          "README.md",
+          "cmd/netmon-tray/main.go",
+          "cmd/netmon-tray/platform_unix.go",
+          "cmd/netmon-tray/platform_windows.go",
+          "docs/architecture/technical-baseline.md",
+          "docs/contract/control-v1.md",
+          "docs/roadmap.md",
+          "go.mod",
+          "internal/adapter/control/client.go",
+          "internal/adapter/control/server.go",
+          "internal/adapter/control/server_test.go",
+          "internal/adapter/control/server_unix.go",
+          "internal/adapter/control/server_unix_test.go",
+          "internal/adapter/control/server_windows.go",
+          "internal/adapter/control/server_windows_test.go",
+          "internal/adapter/export/export_test.go",
+          "internal/adapter/filelock/filelock.go",
+          "internal/adapter/filelock/filelock_test.go",
+          "internal/adapter/filelock/lock_unix.go",
+          "internal/adapter/filelock/lock_windows.go",
+          "internal/adapter/logging/logging.go",
+          "internal/adapter/logging/logging_test.go",
+          "internal/adapter/omarchy/install_test.go",
+          "internal/adapter/probe/ping_unix.go",
+          "internal/adapter/probe/ping_windows.go",
+          "internal/adapter/probe/probe.go",
+          "internal/adapter/probe/route_other.go",
+          "internal/adapter/probe/route_pick.go",
+          "internal/adapter/probe/route_pick_test.go",
+          "internal/adapter/probe/route_windows.go",
+          "internal/adapter/runkey/registry_windows.go",
+          "internal/adapter/runkey/runkey.go",
+          "internal/adapter/runkey/runkey_test.go",
+          "internal/adapter/storage/lock.go",
+          "internal/adapter/storage/sqlite.go",
+          "internal/adapter/storage/sqlite_test.go",
+          "internal/adapter/systemd/service_test.go"
+        ],
+        "classification": "high-risk",
+        "selected_domains": [
+          "trust"
+        ],
+        "evidence_fingerprint": "e4aad5a09a33d483f0ec09cb647ff78ac890cffb",
+        "original_changed_lines": 1884,
+        "authored_lines": 1560
+      },
+      "current_candidate_id": "sha256:528608d9caf8ecc65e361c447ac94a72d864466d6642499afe42d1b665c8e218",
+      "current_candidate": {
+        "projection": "idd-tree-diff/v1",
+        "base_tree": "7e2f99705cac40cfad8e9ed4b88a316c33d8206f",
+        "candidate_tree": "e4aad5a09a33d483f0ec09cb647ff78ac890cffb",
+        "paths": [
+          ".github/workflows/ci.yml",
+          ".github/workflows/release.yml",
+          "README.md",
+          "cmd/netmon-tray/main.go",
+          "cmd/netmon-tray/platform_unix.go",
+          "cmd/netmon-tray/platform_windows.go",
+          "docs/architecture/technical-baseline.md",
+          "docs/contract/control-v1.md",
+          "docs/roadmap.md",
+          "go.mod",
+          "internal/adapter/control/client.go",
+          "internal/adapter/control/server.go",
+          "internal/adapter/control/server_test.go",
+          "internal/adapter/control/server_unix.go",
+          "internal/adapter/control/server_unix_test.go",
+          "internal/adapter/control/server_windows.go",
+          "internal/adapter/control/server_windows_test.go",
+          "internal/adapter/export/export_test.go",
+          "internal/adapter/filelock/filelock.go",
+          "internal/adapter/filelock/filelock_test.go",
+          "internal/adapter/filelock/lock_unix.go",
+          "internal/adapter/filelock/lock_windows.go",
+          "internal/adapter/logging/logging.go",
+          "internal/adapter/logging/logging_test.go",
+          "internal/adapter/omarchy/install_test.go",
+          "internal/adapter/probe/ping_unix.go",
+          "internal/adapter/probe/ping_windows.go",
+          "internal/adapter/probe/probe.go",
+          "internal/adapter/probe/route_other.go",
+          "internal/adapter/probe/route_pick.go",
+          "internal/adapter/probe/route_pick_test.go",
+          "internal/adapter/probe/route_windows.go",
+          "internal/adapter/runkey/registry_windows.go",
+          "internal/adapter/runkey/runkey.go",
+          "internal/adapter/runkey/runkey_test.go",
+          "internal/adapter/storage/lock.go",
+          "internal/adapter/storage/sqlite.go",
+          "internal/adapter/storage/sqlite_test.go",
+          "internal/adapter/systemd/service_test.go"
+        ],
+        "diff_hash": "sha256:a047ca35ae5251a3bdd7cb65229300d9f5a1149379ffd3bb2acc5173b086a234",
+        "paths_digest": "sha256:8f94ced5f5f88c3829efa5fc8cfba8376feff483cc84c3f0c08d307b4c483e60",
+        "authored_lines": 1560,
+        "original_changed_lines": 1884
+      },
+      "lenses": {
+        "trust": {
+          "selected": true,
+          "status": "completed",
+          "request_id": "m6-windows:lens-start:1:0",
+          "result_digest": "sha256:a1c50f537e51ff1970d0883359fa6dcc259bced7c17d835f5cf81716833d1c16",
+          "result": {
+            "findings": [
+              {
+                "severity": "SUGGESTION",
+                "summary": ".github/workflows/release.yml:7-8 sets `permissions: contents: write` for the whole workflow. The windows-test job (lines 11-19) only runs checkout, `go vet` and `go test`, yet it runs with a write-scoped GITHUB_TOKEN. Only the publish step at line 71 needs write access. ci.yml:8-9 already uses `contents: read`.",
+                "acceptance_criteria": "In release.yml the windows-test job and every step before Publish run with a token limited to `contents: read`. `contents: write` is granted only to the job or step that runs `gh release create`. Release publishing still works on a `v*` tag."
+              }
+            ]
+          },
+          "operation": null,
+          "result_request_id": "m6-windows:lens-result:1:1"
+        },
+        "runtime": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        },
+        "evolution": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        },
+        "efficiency": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        }
+      },
+      "findings": [
+        {
+          "id": "F-d1e49790041de65b",
+          "owner": "trust",
+          "severity": "SUGGESTION",
+          "summary": ".github/workflows/release.yml:7-8 sets `permissions: contents: write` for the whole workflow. The windows-test job (lines 11-19) only runs checkout, `go vet` and `go test`, yet it runs with a write-scoped GITHUB_TOKEN. Only the publish step at line 71 needs write access. ci.yml:8-9 already uses `contents: read`.",
+          "acceptance_criteria": "In release.yml the windows-test job and every step before Publish run with a token limited to `contents: read`. `contents: write` is granted only to the job or step that runs `gh release create`. Release publishing still works on a `v*` tag.",
+          "blocking": false,
+          "resolution": "advisory"
+        }
+      ],
+      "findings_digest": "sha256:45e3cd563506931cd930120f1e3210f356d8d4f6ee8853efb0629336bfc648c3",
+      "correction_budget": {
+        "limit_lines": 200,
+        "used_lines": 0,
+        "failed_attempts": 0,
+        "max_failed_attempts": 3
+      },
+      "correction_history": [],
+      "validation_history": [],
+      "follow_ups": [],
+      "pending_operation": null,
+      "pending_correction": null,
+      "terminal_reason": "no-unresolved-blocking-findings"
+    },
+    {
+      "schema_version": 2,
+      "lineage_id": "sha256:30bf090d81826e6afe22b641f446683221e74f48f586053c3740b50e66e5a49d",
+      "generation": 2,
+      "predecessor_lineage_id": "sha256:8307a6a17f0835b5a8f1d2f7c1cc42c14bdc6370d226bafb4810fecd0ee87139",
+      "migration": null,
+      "recovery": null,
+      "revision": 3,
+      "status": "approved",
+      "genesis": {
+        "candidate": {
+          "projection": "idd-tree-diff/v1",
+          "base_tree": "7e2f99705cac40cfad8e9ed4b88a316c33d8206f",
+          "candidate_tree": "460d2b47c65f7007d1a33df9ac0065fe21bf0679",
+          "paths": [
+            ".github/workflows/ci.yml",
+            ".github/workflows/release.yml",
+            "README.md",
+            "cmd/netmon-tray/main.go",
+            "cmd/netmon-tray/platform_unix.go",
+            "cmd/netmon-tray/platform_windows.go",
+            "docs/architecture/technical-baseline.md",
+            "docs/contract/control-v1.md",
+            "docs/roadmap.md",
+            "go.mod",
+            "internal/adapter/control/client.go",
+            "internal/adapter/control/server.go",
+            "internal/adapter/control/server_test.go",
+            "internal/adapter/control/server_unix.go",
+            "internal/adapter/control/server_unix_test.go",
+            "internal/adapter/control/server_windows.go",
+            "internal/adapter/control/server_windows_test.go",
+            "internal/adapter/export/export_test.go",
+            "internal/adapter/filelock/filelock.go",
+            "internal/adapter/filelock/filelock_test.go",
+            "internal/adapter/filelock/lock_unix.go",
+            "internal/adapter/filelock/lock_windows.go",
+            "internal/adapter/logging/logging.go",
+            "internal/adapter/logging/logging_test.go",
+            "internal/adapter/omarchy/install_test.go",
+            "internal/adapter/probe/ping_unix.go",
+            "internal/adapter/probe/ping_windows.go",
+            "internal/adapter/probe/probe.go",
+            "internal/adapter/probe/route_other.go",
+            "internal/adapter/probe/route_pick.go",
+            "internal/adapter/probe/route_pick_test.go",
+            "internal/adapter/probe/route_windows.go",
+            "internal/adapter/runkey/registry_windows.go",
+            "internal/adapter/runkey/runkey.go",
+            "internal/adapter/runkey/runkey_test.go",
+            "internal/adapter/storage/lock.go",
+            "internal/adapter/storage/sqlite.go",
+            "internal/adapter/storage/sqlite_test.go",
+            "internal/adapter/systemd/service_test.go"
+          ],
+          "diff_hash": "sha256:04db1279a967536b96c9ff0b40c003e0bf49e8f6c886c855650a6e915001ced5",
+          "paths_digest": "sha256:8f94ced5f5f88c3829efa5fc8cfba8376feff483cc84c3f0c08d307b4c483e60",
+          "authored_lines": 1583,
+          "original_changed_lines": 1909
+        },
+        "candidate_id": "sha256:dfe039d1d4a5784285ac851c61a73b1a4521d448a15dd2a3ab701815c099a15f",
+        "paths": [
+          ".github/workflows/ci.yml",
+          ".github/workflows/release.yml",
+          "README.md",
+          "cmd/netmon-tray/main.go",
+          "cmd/netmon-tray/platform_unix.go",
+          "cmd/netmon-tray/platform_windows.go",
+          "docs/architecture/technical-baseline.md",
+          "docs/contract/control-v1.md",
+          "docs/roadmap.md",
+          "go.mod",
+          "internal/adapter/control/client.go",
+          "internal/adapter/control/server.go",
+          "internal/adapter/control/server_test.go",
+          "internal/adapter/control/server_unix.go",
+          "internal/adapter/control/server_unix_test.go",
+          "internal/adapter/control/server_windows.go",
+          "internal/adapter/control/server_windows_test.go",
+          "internal/adapter/export/export_test.go",
+          "internal/adapter/filelock/filelock.go",
+          "internal/adapter/filelock/filelock_test.go",
+          "internal/adapter/filelock/lock_unix.go",
+          "internal/adapter/filelock/lock_windows.go",
+          "internal/adapter/logging/logging.go",
+          "internal/adapter/logging/logging_test.go",
+          "internal/adapter/omarchy/install_test.go",
+          "internal/adapter/probe/ping_unix.go",
+          "internal/adapter/probe/ping_windows.go",
+          "internal/adapter/probe/probe.go",
+          "internal/adapter/probe/route_other.go",
+          "internal/adapter/probe/route_pick.go",
+          "internal/adapter/probe/route_pick_test.go",
+          "internal/adapter/probe/route_windows.go",
+          "internal/adapter/runkey/registry_windows.go",
+          "internal/adapter/runkey/runkey.go",
+          "internal/adapter/runkey/runkey_test.go",
+          "internal/adapter/storage/lock.go",
+          "internal/adapter/storage/sqlite.go",
+          "internal/adapter/storage/sqlite_test.go",
+          "internal/adapter/systemd/service_test.go"
+        ],
+        "classification": "high-risk",
+        "selected_domains": [
+          "trust"
+        ],
+        "evidence_fingerprint": "460d2b47c65f7007d1a33df9ac0065fe21bf0679",
+        "original_changed_lines": 1909,
+        "authored_lines": 1583
+      },
+      "current_candidate_id": "sha256:dfe039d1d4a5784285ac851c61a73b1a4521d448a15dd2a3ab701815c099a15f",
+      "current_candidate": {
+        "projection": "idd-tree-diff/v1",
+        "base_tree": "7e2f99705cac40cfad8e9ed4b88a316c33d8206f",
+        "candidate_tree": "460d2b47c65f7007d1a33df9ac0065fe21bf0679",
+        "paths": [
+          ".github/workflows/ci.yml",
+          ".github/workflows/release.yml",
+          "README.md",
+          "cmd/netmon-tray/main.go",
+          "cmd/netmon-tray/platform_unix.go",
+          "cmd/netmon-tray/platform_windows.go",
+          "docs/architecture/technical-baseline.md",
+          "docs/contract/control-v1.md",
+          "docs/roadmap.md",
+          "go.mod",
+          "internal/adapter/control/client.go",
+          "internal/adapter/control/server.go",
+          "internal/adapter/control/server_test.go",
+          "internal/adapter/control/server_unix.go",
+          "internal/adapter/control/server_unix_test.go",
+          "internal/adapter/control/server_windows.go",
+          "internal/adapter/control/server_windows_test.go",
+          "internal/adapter/export/export_test.go",
+          "internal/adapter/filelock/filelock.go",
+          "internal/adapter/filelock/filelock_test.go",
+          "internal/adapter/filelock/lock_unix.go",
+          "internal/adapter/filelock/lock_windows.go",
+          "internal/adapter/logging/logging.go",
+          "internal/adapter/logging/logging_test.go",
+          "internal/adapter/omarchy/install_test.go",
+          "internal/adapter/probe/ping_unix.go",
+          "internal/adapter/probe/ping_windows.go",
+          "internal/adapter/probe/probe.go",
+          "internal/adapter/probe/route_other.go",
+          "internal/adapter/probe/route_pick.go",
+          "internal/adapter/probe/route_pick_test.go",
+          "internal/adapter/probe/route_windows.go",
+          "internal/adapter/runkey/registry_windows.go",
+          "internal/adapter/runkey/runkey.go",
+          "internal/adapter/runkey/runkey_test.go",
+          "internal/adapter/storage/lock.go",
+          "internal/adapter/storage/sqlite.go",
+          "internal/adapter/storage/sqlite_test.go",
+          "internal/adapter/systemd/service_test.go"
+        ],
+        "diff_hash": "sha256:04db1279a967536b96c9ff0b40c003e0bf49e8f6c886c855650a6e915001ced5",
+        "paths_digest": "sha256:8f94ced5f5f88c3829efa5fc8cfba8376feff483cc84c3f0c08d307b4c483e60",
+        "authored_lines": 1583,
+        "original_changed_lines": 1909
+      },
+      "lenses": {
+        "trust": {
+          "selected": true,
+          "status": "completed",
+          "request_id": "m6-windows:lens-start:2:0",
+          "result_digest": "sha256:0fa38eeaca8882e0d194fd5ba5d8378917d98e795204f8f7a9dfdb78f111f3cc",
+          "result": {
+            "findings": []
+          },
+          "operation": null,
+          "result_request_id": "m6-windows:lens-result:2:1"
+        },
+        "runtime": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        },
+        "evolution": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        },
+        "efficiency": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        }
+      },
+      "findings": [],
+      "findings_digest": "sha256:4d59fd4aa8eefff6dbf7cd085cc100ee928217573658f8bbc301aa4a3f1adc0f",
+      "correction_budget": {
+        "limit_lines": 200,
+        "used_lines": 0,
+        "failed_attempts": 0,
+        "max_failed_attempts": 3
+      },
+      "correction_history": [],
+      "validation_history": [],
+      "follow_ups": [],
+      "pending_operation": null,
+      "pending_correction": null,
+      "terminal_reason": "no-unresolved-blocking-findings"
+    }
+  ],
+  "assumptions": [
+    "Windows: dos binarios del mismo código, netmon-tray.exe de consola (ctl, service, version) y netmon-trayw.exe gráfico que arranca la clave Run; service install registra el netmon-trayw.exe junto al binario (respuesta del usuario: 'si, mejor')",
+    "Windows: además de la ACL del directorio, el servidor rechaza conexiones cuyo PID (SIO_AF_UNIX_GETPEERPID) pertenece a otro SID (respuesta del usuario: 'si, mejor')",
+    "El log de Windows se recorta al arrancar renombrando netmon-tray.log a netmon-tray.log.old si pasa de 1 MiB, para conservar el último tramo"
+  ],
+  "closed_at": "2026-10-24T01:41:25.608Z"
+}
