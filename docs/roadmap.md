@@ -16,8 +16,10 @@ Binario único con dominio y adaptadores separados (ADR 0002), sondas por capas 
 | M2 — Exportación y retención | Exportar a CSV/JSON, rotación a 60 días y migración de esquema |
 | M3 — Contrato de control | Socket local versionado y `ctl` (ADR 0005) |
 | M4 — Panel de Omarchy | Plugin QML con estado y último corte, instalable desde el binario |
-| M5 — Servicio e instalación | Unidad `systemd --user`, README, `go install` y release en GitHub |
+| M5 — Servicio e instalación | `netmon-tray service install/remove` con la unidad `systemd --user` (sesión gráfica, se relanza si falla salvo con otro motor en marcha, código 4), `netmon-tray version` del tag, README, licencia MIT, `go install` y release en GitHub: CI en cada push y, con cada tag `v*`, pruebas y binarios `linux-amd64` y `linux-arm64` con `SHA256SUMS` |
 | M6 — Windows | Adaptadores de bandeja y servicio para Windows |
+
+M1–M5 están hechos; el siguiente es M6.
 
 ## Decisiones diferidas
 
