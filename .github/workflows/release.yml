@@ -18,6 +18,10 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: go test ./...
+      # The real binaries: Run key, engine probing, ctl and a second engine.
+      - name: Smoke test
+        shell: pwsh
+        run: ./.github/scripts/windows-smoke.ps1
 
   build:
     needs: windows-test

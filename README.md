@@ -186,7 +186,7 @@ GOOS=windows go vet ./...
 node --test omarchy-plugin/
 ```
 
-Los tests son offline: las sondas y la bandeja quedan fuera, y el dominio se prueba con secuencias de sondeos simuladas. La lógica del panel vive en `omarchy-plugin/Model.js` y se prueba con node, sin Quickshell. El código de Windows se comprueba aquí con `GOOS=windows go vet ./...`, y sus tests corren en GitHub Actions en `windows-latest`. Un tag `v*` ejecuta los tests en Linux y en Windows y publica en Releases los binarios `linux-amd64`, `linux-arm64`, `windows-amd64` y `windows-arm64` con su `SHA256SUMS`.
+Los tests son offline: las sondas y la bandeja quedan fuera, y el dominio se prueba con secuencias de sondeos simuladas. La lógica del panel vive en `omarchy-plugin/Model.js` y se prueba con node, sin Quickshell. El código de Windows se comprueba aquí con `GOOS=windows go vet ./...`, y sus tests corren en GitHub Actions en `windows-latest`, seguidos de una prueba de humo con los binarios reales (`.github/scripts/windows-smoke.ps1`): `service install`, que el motor sondee, `ctl status`, un segundo motor que sale con 4 y `service remove`. Un tag `v*` ejecuta los tests y la prueba de humo de Windows y publica en Releases los binarios `linux-amd64`, `linux-arm64`, `windows-amd64` y `windows-arm64` con su `SHA256SUMS`.
 
 ## Licencia
 
