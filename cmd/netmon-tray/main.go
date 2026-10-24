@@ -1,6 +1,7 @@
 // Command netmon-tray monitors the network by layers and shows its state in
-// the system tray. "netmon-tray ctl" controls the running engine and
-// "netmon-tray plugin install" installs the Omarchy panel it embeds.
+// the system tray. "netmon-tray ctl" controls the running engine,
+// "netmon-tray plugin install" installs the Omarchy panel it embeds and
+// "netmon-tray service install" makes it a systemd --user unit.
 package main
 
 import (
@@ -8,10 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -21,6 +24,7 @@ import (
 	"github.com/Snakeblack/netmon-tray/internal/adapter/omarchy"
 	"github.com/Snakeblack/netmon-tray/internal/adapter/probe"
 	"github.com/Snakeblack/netmon-tray/internal/adapter/storage"
+	"github.com/Snakeblack/netmon-tray/internal/adapter/systemd"
 	"github.com/Snakeblack/netmon-tray/internal/adapter/tray"
 	"github.com/Snakeblack/netmon-tray/internal/app"
 	"github.com/Snakeblack/netmon-tray/internal/domain"
@@ -34,12 +38,28 @@ const (
 	retention     = 60 * 24 * time.Hour
 )
 
+const usage = `Uso: netmon-tray                  arranca el motor y el icono
+     netmon-tray ctl              controla el motor en marcha (netmon-tray ctl help)
+     netmon-tray plugin install   instala el panel de Omarchy
+     netmon-tray service install  arranca el motor con la sesión (systemd --user)
+     netmon-tray version          muestra la versión
+`
+
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "ctl" {
-		os.Exit(control.Ctl(os.Args[2:], os.Stdout, os.Stderr))
-	}
-	if len(os.Args) > 1 && os.Args[1] == "plugin" {
-		os.Exit(plugin(os.Args[2:]))
+	args := os.Args[1:]
+	switch {
+	case len(args) > 0 && args[0] == "ctl":
+		os.Exit(control.Ctl(args[1:], os.Stdout, os.Stderr))
+	case len(args) > 0 && args[0] == "plugin":
+		os.Exit(plugin(args[1:]))
+	case len(args) > 0 && args[0] == "service":
+		os.Exit(service(args[1:]))
+	case len(args) == 1 && (args[0] == "version" || args[0] == "--version"):
+		fmt.Println("netmon-tray", version())
+		os.Exit(0)
+	case len(args) > 0:
+		fmt.Fprintf(os.Stderr, "netmon-tray: argumento desconocido %q\n%s", args[0], usage)
+		os.Exit(control.ExitUsage)
 	}
 	log := logging.New(os.Stderr)
 
@@ -51,6 +71,10 @@ func main() {
 	// Open holds the history lock, so a second engine stops here without
 	// touching the file (ADR 0003), and only the owner claims the socket.
 	store, err := storage.Open(historyPath)
+	if errors.Is(err, storage.ErrInUse) {
+		log.Error("open history", "path", historyPath, "err", err)
+		os.Exit(systemd.ExitAlreadyRunning)
+	}
 	if err != nil {
 		log.Error("open history", "path", historyPath, "err", err)
 		os.Exit(1)
@@ -96,7 +120,7 @@ func main() {
 		log.Info("control socket ready", "path", ctl.Path())
 	}
 
-	log.Info("netmon-tray started", "history", historyPath, "interval", probeInterval, "retention", retention)
+	log.Info("netmon-tray started", "version", version(), "history", historyPath, "interval", probeInterval, "retention", retention)
 	t.Run(ctx, cancel, func(ctx context.Context) {
 		if err := engine.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Error("engine stopped", "err", err)
@@ -119,6 +143,44 @@ func plugin(args []string) int {
 	return omarchy.Plugin(args, in, os.Stdout, os.Stderr)
 }
 
+func service(args []string) int {
+	dir, err := systemd.DefaultDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "netmon-tray service: sin carpeta de unidades: %v\n", err)
+		return systemd.ExitFailed
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "netmon-tray service: sin ruta del binario: %v\n", err)
+		return systemd.ExitFailed
+	}
+	in := systemd.Installer{Dir: dir, Executable: exe, LookPath: exec.LookPath, Systemctl: systemd.ExecSystemctl, Running: engineRunning}
+	return systemd.Service(args, in, os.Stdout, os.Stderr)
+}
+
+// engineRunning reports whether an engine answers on the control socket.
+func engineRunning() bool {
+	dir, err := control.DefaultDir()
+	if err != nil {
+		return false
+	}
+	conn, err := net.DialTimeout("unix", filepath.Join(dir, control.SocketName), time.Second)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+// version is the module version Go stamps from the git tag: v0.1.0 on the
+// tagged commit, a pseudo-version past it and "+dirty" with local changes.
+func version() string {
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+		return info.Main.Version
+	}
+	return "(devel)"
+}
+
 // listenControl opens the control socket. Without it the engine still runs
 // with its tray icon; only another engine already running is fatal.
 func listenControl(log *slog.Logger) *control.Server {
@@ -130,7 +192,7 @@ func listenControl(log *slog.Logger) *control.Server {
 	srv, err := control.Listen(dir, log)
 	if errors.Is(err, control.ErrAlreadyRunning) {
 		log.Error("start control socket", "err", err)
-		os.Exit(1)
+		os.Exit(systemd.ExitAlreadyRunning)
 	}
 	if err != nil {
 		log.Warn("control socket disabled", "err", err)
