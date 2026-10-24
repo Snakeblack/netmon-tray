@@ -1,3 +1,7 @@
+//go:build !windows
+
+// The Omarchy panel and the systemd unit exist on Linux only.
+
 package systemd
 
 import (

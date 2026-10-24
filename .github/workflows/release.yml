@@ -4,11 +4,23 @@ on:
   push:
     tags: ["v*"]
 
+# Tests and builds read; only the publish job may write the release.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  windows-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+
+  build:
+    needs: windows-test
     runs-on: ubuntu-latest
     steps:
       # The whole history with its tags, so Go stamps the tag as the version.
@@ -40,11 +52,41 @@ jobs:
             cp README.md LICENSE "$OUT/$name/"
             tar -C "$OUT" -czf "$OUT/$name.tar.gz" "$name"
           done
+          # Windows gets the console build for ctl and service, and the
+          # windowsgui build that the Run key starts without a window.
+          for arch in amd64 arm64; do
+            name="netmon-tray-$TAG-windows-$arch"
+            mkdir "$OUT/$name"
+            CGO_ENABLED=0 GOOS=windows GOARCH="$arch" go build -trimpath -ldflags="-s -w" -o "$OUT/$name/netmon-tray.exe" ./cmd/netmon-tray
+            CGO_ENABLED=0 GOOS=windows GOARCH="$arch" go build -trimpath -ldflags="-s -w -H=windowsgui" -o "$OUT/$name/netmon-trayw.exe" ./cmd/netmon-tray
+            cp README.md LICENSE "$OUT/$name/"
+            (cd "$OUT" && zip -qr "$name.zip" "$name")
+          done
           "$OUT/netmon-tray-$TAG-linux-amd64/netmon-tray" version | grep -Fx "netmon-tray $TAG"
-          (cd "$OUT" && sha256sum -- *.tar.gz > SHA256SUMS)
+          (cd "$OUT" && sha256sum -- *.tar.gz *.zip > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: |
+            ${{ runner.temp }}/dist/*.tar.gz
+            ${{ runner.temp }}/dist/*.zip
+            ${{ runner.temp }}/dist/SHA256SUMS
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: ${{ runner.temp }}/dist
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
           OUT: ${{ runner.temp }}/dist
-        run: gh release create "$TAG" "$OUT"/*.tar.gz "$OUT/SHA256SUMS" --title "$TAG" --generate-notes
+        run: gh release create "$TAG" "$OUT"/*.tar.gz "$OUT"/*.zip "$OUT/SHA256SUMS" --title "$TAG" --generate-notes

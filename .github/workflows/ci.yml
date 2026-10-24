@@ -23,3 +23,14 @@ jobs:
       - run: go test ./...
       # Node 22 takes a directory for a module to run, so pass the files.
       - run: node --test omarchy-plugin/*.test.js
+
+  # The Windows adapters (registry, ACL, IcmpSendEcho) only run here.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...

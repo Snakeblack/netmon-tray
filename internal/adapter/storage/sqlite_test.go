@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -156,6 +157,9 @@ func TestOpenRefusesNewerSchema(t *testing.T) {
 }
 
 func TestHistoryIsPrivateEvenInALooseExistingDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no mode bits: the ACL of %LOCALAPPDATA% keeps the history private")
+	}
 	dir := filepath.Join(t.TempDir(), "data")
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
