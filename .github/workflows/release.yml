@@ -23,7 +23,8 @@ jobs:
           node-version: 22
       - run: go vet ./...
       - run: go test ./...
-      - run: node --test omarchy-plugin/
+      # Node 22 takes a directory for a module to run, so pass the files.
+      - run: node --test omarchy-plugin/*.test.js
       # Built outside the work tree: a file inside it would stamp "+dirty".
       - name: Build
         env:

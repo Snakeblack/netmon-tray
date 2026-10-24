@@ -1,0 +1,133 @@
+{
+  "schema": "idd-state/v1",
+  "change": "ci-node-test-glob",
+  "mode": "idd",
+  "status": "closed",
+  "intent": {
+    "kind": "bug",
+    "summary": "El CI falla en node --test omarchy-plugin/ porque Node 22 no acepta una carpeta como argumento de --test",
+    "acceptance": "Los workflows de CI y release ejecutan las pruebas del panel en Node 22 y el CI de main sale en verde"
+  },
+  "facts": {
+    "basis": "El log del run 40045136223 muestra MODULE_NOT_FOUND con Node v22.23.3; pasar omarchy-plugin/*.test.js lo resuelve en cualquier versión sin cambiar qué pruebas se ejecutan"
+  },
+  "plan": {
+    "paths": [
+      ".github/workflows/ci.yml",
+      ".github/workflows/release.yml"
+    ],
+    "work_units": 1,
+    "decision": false,
+    "operations": []
+  },
+  "signals": [
+    {
+      "id": "always",
+      "reason": "every change with a resolved intent",
+      "source": "declaration"
+    },
+    {
+      "id": "bug-fix",
+      "reason": "the intent is a bug fix",
+      "source": "declaration"
+    }
+  ],
+  "obligations": [
+    {
+      "id": "checks-pass",
+      "signal": "always",
+      "status": "satisfied",
+      "evidence": [
+        "ev-2"
+      ]
+    },
+    {
+      "id": "repro-test",
+      "signal": "bug-fix",
+      "status": "satisfied",
+      "evidence": [
+        "ev-1"
+      ]
+    }
+  ],
+  "gates": [],
+  "evidence": [
+    {
+      "id": "ev-1",
+      "kind": "repro-run-pair",
+      "obligation": "repro-test",
+      "recorded_at": "2026-10-24T00:30:13.441Z",
+      "detail": {
+        "red": "run-1",
+        "green": "run-2"
+      }
+    },
+    {
+      "id": "ev-2",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-24T00:30:13.759Z",
+      "detail": {
+        "tree": "sha256:20876e764850cdfa4f99d348134ff9635acd1da16fe81d88ecd2ff0b34b53163",
+        "runs": [
+          "run-3",
+          "run-4",
+          "run-5"
+        ]
+      }
+    }
+  ],
+  "base": "3e31a694777833cc6202b8337de5d948e967ee53",
+  "runs": [
+    {
+      "id": "run-1",
+      "purpose": "repro-test",
+      "command": "repro-node22",
+      "exit_code": 1,
+      "output_sha256": "sha256:2127ede179cdbbb20002b9358d627fca897660eead420188e55b7cfce9387910",
+      "tree": "sha256:f058c77153508fc7ce2453eeb65dbd6c03ed9db798e900363ad8fd4c0c0f1e6f",
+      "recorded_at": "2026-10-24T00:30:01.370Z"
+    },
+    {
+      "id": "run-2",
+      "purpose": "repro-test",
+      "command": "repro-node22",
+      "exit_code": 0,
+      "output_sha256": "sha256:57d9e12b4220fbff5b704e552a332b72a751db6b0414f99945faaf00a08969fb",
+      "tree": "sha256:6fdda1c4ee3598607cd915d70ff2d723f994f134f5263ece725f3ce674ab153f",
+      "recorded_at": "2026-10-24T00:30:13.441Z"
+    },
+    {
+      "id": "run-3",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:1ce7e1300c3de8d237be231b6dbb53f3acd4e9ac7185227f6ab1fb4b33ceb0da",
+      "tree": "sha256:20876e764850cdfa4f99d348134ff9635acd1da16fe81d88ecd2ff0b34b53163",
+      "recorded_at": "2026-10-24T00:30:13.759Z"
+    },
+    {
+      "id": "run-4",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:20876e764850cdfa4f99d348134ff9635acd1da16fe81d88ecd2ff0b34b53163",
+      "recorded_at": "2026-10-24T00:30:13.759Z"
+    },
+    {
+      "id": "run-5",
+      "purpose": "checks",
+      "name": "plugin",
+      "command": "node --test omarchy-plugin/",
+      "exit_code": 0,
+      "output_sha256": "sha256:6524cef3f157206673efe6e9c9f6f93821c47776031d907c21b979a9e7ce4fd3",
+      "tree": "sha256:20876e764850cdfa4f99d348134ff9635acd1da16fe81d88ecd2ff0b34b53163",
+      "recorded_at": "2026-10-24T00:30:13.759Z",
+      "tests": 17
+    }
+  ],
+  "closed_at": "2026-10-24T00:30:20.386Z"
+}
