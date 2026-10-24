@@ -1,6 +1,7 @@
 checks:
   test: go test ./...
   vet: go vet ./...
+  plugin: node --test omarchy-plugin/
 team:
   size: solo
   experience: senior

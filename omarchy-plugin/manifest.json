@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "snakeblack.netmon-tray",
+  "name": "Cortes de red",
+  "version": "0.1.0",
+  "author": "Snakeblack",
+  "description": "Estado de la red y último corte en la barra de Omarchy, con el motor netmon-tray.",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Cortes de red",
+    "description": "Muestra si hay conexión, en qué capa falla y el último corte, y exporta el historial de netmon-tray.",
+    "category": "Status",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "command": "netmon-tray"
+    },
+    "schema": [
+      { "key": "command", "type": "string", "label": "Comando de netmon-tray", "defaultValue": "netmon-tray", "description": "Ruta absoluta del binario si no está en el PATH del shell." }
+    ]
+  }
+}
