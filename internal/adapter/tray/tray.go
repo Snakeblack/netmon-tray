@@ -19,6 +19,10 @@ import (
 
 const iconSize = 22
 
+// Title is the icon's title. fyne.io/systray also makes it the icon's
+// StatusNotifierItem id, which trays use to hide or pin it.
+const Title = "netmon-tray"
+
 var (
 	colorUp       = color.RGBA{R: 0x2e, G: 0xa0, B: 0x43, A: 0xff}
 	colorDegraded = color.RGBA{R: 0xe5, G: 0xa0, B: 0x1a, A: 0xff}
@@ -54,7 +58,7 @@ func New(export func(context.Context) ([]string, error)) *Tray {
 func (t *Tray) Run(ctx context.Context, cancel context.CancelFunc, start func(ctx context.Context)) {
 	systray.Run(func() {
 		systray.SetIcon(t.icons[domain.StateUnknown])
-		systray.SetTitle("netmon-tray")
+		systray.SetTitle(Title)
 		systray.SetTooltip("netmon-tray: sin datos")
 
 		t.status = systray.AddMenuItem("Sin datos", "")

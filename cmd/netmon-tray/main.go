@@ -1,12 +1,15 @@
 // Command netmon-tray monitors the network by layers and shows its state in
-// the system tray.
+// the system tray. "netmon-tray ctl" controls the running engine and
+// "netmon-tray plugin install" installs the Omarchy panel it embeds.
 package main
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -15,11 +18,13 @@ import (
 	"github.com/Snakeblack/netmon-tray/internal/adapter/control"
 	"github.com/Snakeblack/netmon-tray/internal/adapter/export"
 	"github.com/Snakeblack/netmon-tray/internal/adapter/logging"
+	"github.com/Snakeblack/netmon-tray/internal/adapter/omarchy"
 	"github.com/Snakeblack/netmon-tray/internal/adapter/probe"
 	"github.com/Snakeblack/netmon-tray/internal/adapter/storage"
 	"github.com/Snakeblack/netmon-tray/internal/adapter/tray"
 	"github.com/Snakeblack/netmon-tray/internal/app"
 	"github.com/Snakeblack/netmon-tray/internal/domain"
+	omarchyplugin "github.com/Snakeblack/netmon-tray/omarchy-plugin"
 )
 
 const (
@@ -32,6 +37,9 @@ const (
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "ctl" {
 		os.Exit(control.Ctl(os.Args[2:], os.Stdout, os.Stderr))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "plugin" {
+		os.Exit(plugin(os.Args[2:]))
 	}
 	log := logging.New(os.Stderr)
 
@@ -96,6 +104,19 @@ func main() {
 		}
 	})
 	log.Info("netmon-tray stopped")
+}
+
+func plugin(args []string) int {
+	dir, err := omarchy.DefaultDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "netmon-tray plugin: sin carpeta de plugins: %v\n", err)
+		return omarchy.ExitFailed
+	}
+	in := omarchy.Installer{Files: omarchyplugin.Files, Dir: dir, LookPath: exec.LookPath, Shell: omarchy.ExecShell, Wait: 50 * time.Millisecond,
+		TrayIcon: tray.Title}
+	// Without shell.json the tray icon is left as it is.
+	in.ShellConfig, _ = omarchy.DefaultShellConfig()
+	return omarchy.Plugin(args, in, os.Stdout, os.Stderr)
 }
 
 // listenControl opens the control socket. Without it the engine still runs
