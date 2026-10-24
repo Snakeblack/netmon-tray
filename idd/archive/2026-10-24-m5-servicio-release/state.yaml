@@ -1,0 +1,300 @@
+{
+  "schema": "idd-state/v1",
+  "change": "m5-servicio-release",
+  "mode": "idd",
+  "status": "closed",
+  "intent": {
+    "request": "Commit M4 y luego M5 (Recomendado)",
+    "kind": "feature",
+    "summary": "M5: netmon-tray service install/remove instala el motor como unidad systemd --user, netmon-tray version muestra la versión del tag, README de primer uso y release de binarios en GitHub",
+    "acceptance": "netmon-tray service install deja netmon-tray.service habilitada y en marcha con el binario instalado; otro motor en marcha sale con un código que la unidad no reintenta; netmon-tray version imprime la versión; el README explica instalación, actualización y desinstalación; un tag v* publica binarios con pruebas previas"
+  },
+  "facts": {
+    "coverage": [
+      {
+        "category": "inputs",
+        "question": "\"¿Qué publica el release (arquitecturas, formato, workflows de CI y de tag) y cuándo se crea el repositorio público en GitHub?\""
+      },
+      {
+        "category": "uniqueness",
+        "cite": {
+          "kind": "path",
+          "path": "cmd/netmon-tray/main.go",
+          "line": 51
+        }
+      },
+      {
+        "category": "persistence",
+        "question": "\"¿La unidad sigue a graphical-session.target como alexa-tray, con Restart=on-failure a 5 s y sin reintento (salida 4) cuando ya hay otro motor con el historial o el socket?\""
+      },
+      {
+        "category": "copy",
+        "cite": {
+          "kind": "path",
+          "path": "cmd/netmon-tray/main.go",
+          "line": 112
+        }
+      },
+      {
+        "category": "url-state",
+        "cite": {
+          "kind": "path",
+          "path": "docs/architecture/technical-baseline.md",
+          "line": 5
+        }
+      },
+      {
+        "category": "accessibility",
+        "cite": {
+          "kind": "path",
+          "path": "omarchy-plugin/Model.js",
+          "line": 192
+        }
+      },
+      {
+        "category": "errors",
+        "question": "\"¿service install con un motor ya en marcha fuera de la unidad la habilita sin arrancarla y sale con 1 explicando cómo pasar a la unidad, como alexa-tray?\""
+      }
+    ]
+  },
+  "plan": {
+    "paths": [
+      ".github/workflows/ci.yml",
+      ".github/workflows/release.yml",
+      "LICENSE",
+      "README.md",
+      "cmd/netmon-tray/main.go",
+      "docs/architecture/technical-baseline.md",
+      "docs/roadmap.md",
+      "internal/adapter/systemd/service.go",
+      "internal/adapter/systemd/service_test.go"
+    ],
+    "work_units": 3,
+    "decision": false,
+    "operations": []
+  },
+  "signals": [
+    {
+      "id": "always",
+      "reason": "every change with a resolved intent",
+      "source": "declaration"
+    },
+    {
+      "id": "multi-unit-or-decision",
+      "reason": "declared 3 work units",
+      "source": "declaration"
+    },
+    {
+      "id": "adr-or-quality-attribute",
+      "reason": "declared ADR 0001, 0002",
+      "source": "declaration"
+    }
+  ],
+  "impacts": [
+    {
+      "kind": "adr",
+      "id": "0001",
+      "impact": "conforms",
+      "reason": "La unidad systemd --user arranca el único motor con la sesión (el arranque automático es parte del producto) y no lo relanza con otro motor en marcha"
+    },
+    {
+      "kind": "adr",
+      "id": "0002",
+      "impact": "conforms",
+      "reason": "El instalador de la unidad vive en internal/adapter/systemd y solo lo usa main; el dominio no depende de systemd"
+    }
+  ],
+  "obligations": [
+    {
+      "id": "checks-pass",
+      "signal": "always",
+      "status": "satisfied",
+      "evidence": [
+        "ev-3"
+      ]
+    },
+    {
+      "id": "living-doc",
+      "signal": "multi-unit-or-decision",
+      "status": "satisfied",
+      "evidence": [
+        "ev-5"
+      ]
+    },
+    {
+      "id": "adr-impact-declaration",
+      "signal": "adr-or-quality-attribute",
+      "status": "satisfied",
+      "evidence": [
+        "ev-4"
+      ]
+    }
+  ],
+  "gates": [
+    {
+      "id": "open-facts",
+      "status": "resolved",
+      "answer": "Unidad: Como alexa-tray (Recomendado). Release: Actions, amd64 y arm64 (Recomendado). Publicar: Al final, con confirmación y asegurandote que no hay nada sensible o que haga referencia a este equipo. netmon: Deshabilitarlo (Recomendado).",
+      "source": "user"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "ev-1",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-24T00:22:37.139Z",
+      "detail": {
+        "tree": "sha256:1da80ca8ccaa87837d2e6b5c995720e1f6c1ae47a73773ed47c008b8086d542c",
+        "runs": [
+          "run-1",
+          "run-2",
+          "run-3"
+        ]
+      }
+    },
+    {
+      "id": "ev-2",
+      "kind": "adr-impact-declaration",
+      "obligation": "adr-impact-declaration",
+      "recorded_at": "2026-10-24T00:22:37.139Z",
+      "detail": {
+        "refs": [
+          "adr:0001 conforms",
+          "adr:0002 conforms"
+        ],
+        "records": [],
+        "tree": "sha256:1da80ca8ccaa87837d2e6b5c995720e1f6c1ae47a73773ed47c008b8086d542c",
+        "fitness": [
+          "run-4"
+        ]
+      }
+    },
+    {
+      "id": "ev-3",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-24T00:23:37.716Z",
+      "detail": {
+        "tree": "sha256:1da80ca8ccaa87837d2e6b5c995720e1f6c1ae47a73773ed47c008b8086d542c",
+        "runs": [
+          "run-5",
+          "run-6",
+          "run-7"
+        ]
+      }
+    },
+    {
+      "id": "ev-4",
+      "kind": "adr-impact-declaration",
+      "obligation": "adr-impact-declaration",
+      "recorded_at": "2026-10-24T00:23:37.716Z",
+      "detail": {
+        "refs": [
+          "adr:0001 conforms",
+          "adr:0002 conforms"
+        ],
+        "records": [],
+        "tree": "sha256:1da80ca8ccaa87837d2e6b5c995720e1f6c1ae47a73773ed47c008b8086d542c",
+        "fitness": [
+          "run-8"
+        ]
+      }
+    },
+    {
+      "id": "ev-5",
+      "kind": "living-doc-current",
+      "obligation": "living-doc",
+      "recorded_at": "2026-10-24T00:23:37.773Z"
+    }
+  ],
+  "base": "da297e4c04052c1d141d96b7dcf04aec62f149a4",
+  "runs": [
+    {
+      "id": "run-1",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:1ce7e1300c3de8d237be231b6dbb53f3acd4e9ac7185227f6ab1fb4b33ceb0da",
+      "tree": "sha256:1da80ca8ccaa87837d2e6b5c995720e1f6c1ae47a73773ed47c008b8086d542c",
+      "recorded_at": "2026-10-24T00:22:37.139Z"
+    },
+    {
+      "id": "run-2",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:1da80ca8ccaa87837d2e6b5c995720e1f6c1ae47a73773ed47c008b8086d542c",
+      "recorded_at": "2026-10-24T00:22:37.139Z"
+    },
+    {
+      "id": "run-3",
+      "purpose": "checks",
+      "name": "plugin",
+      "command": "node --test omarchy-plugin/",
+      "exit_code": 0,
+      "output_sha256": "sha256:ed9610ae29ad1aae7d8edc1f1d85380bc2fb9146780ec28019419f2e64d76f44",
+      "tree": "sha256:1da80ca8ccaa87837d2e6b5c995720e1f6c1ae47a73773ed47c008b8086d542c",
+      "recorded_at": "2026-10-24T00:22:37.139Z",
+      "tests": 17
+    },
+    {
+      "id": "run-4",
+      "purpose": "fitness",
+      "ref": "adr:0002",
+      "command": "! go list -deps ./internal/domain/... | grep -E 'internal/adapter|dbus|systemd'",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:1da80ca8ccaa87837d2e6b5c995720e1f6c1ae47a73773ed47c008b8086d542c",
+      "recorded_at": "2026-10-24T00:22:37.139Z"
+    },
+    {
+      "id": "run-5",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:1ce7e1300c3de8d237be231b6dbb53f3acd4e9ac7185227f6ab1fb4b33ceb0da",
+      "tree": "sha256:1da80ca8ccaa87837d2e6b5c995720e1f6c1ae47a73773ed47c008b8086d542c",
+      "recorded_at": "2026-10-24T00:23:37.716Z"
+    },
+    {
+      "id": "run-6",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:1da80ca8ccaa87837d2e6b5c995720e1f6c1ae47a73773ed47c008b8086d542c",
+      "recorded_at": "2026-10-24T00:23:37.716Z"
+    },
+    {
+      "id": "run-7",
+      "purpose": "checks",
+      "name": "plugin",
+      "command": "node --test omarchy-plugin/",
+      "exit_code": 0,
+      "output_sha256": "sha256:ac7dbca949e8a810d372b29c7a38f4152f04f55ec2b837d6519cf322f235c6ca",
+      "tree": "sha256:1da80ca8ccaa87837d2e6b5c995720e1f6c1ae47a73773ed47c008b8086d542c",
+      "recorded_at": "2026-10-24T00:23:37.716Z",
+      "tests": 17
+    },
+    {
+      "id": "run-8",
+      "purpose": "fitness",
+      "ref": "adr:0002",
+      "command": "! go list -deps ./internal/domain/... | grep -E 'internal/adapter|dbus|systemd'",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:1da80ca8ccaa87837d2e6b5c995720e1f6c1ae47a73773ed47c008b8086d542c",
+      "recorded_at": "2026-10-24T00:23:37.716Z"
+    }
+  ],
+  "assumptions": [
+    "Un argumento desconocido muestra el uso y sale con 2 en lugar de arrancar el motor; version y --version imprimen la versión que Go graba del tag (debug.ReadBuildInfo), como en alexa-tray"
+  ],
+  "closed_at": "2026-10-24T00:23:37.773Z"
+}
