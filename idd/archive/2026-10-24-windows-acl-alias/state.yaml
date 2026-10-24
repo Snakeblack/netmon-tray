@@ -1,0 +1,328 @@
+{
+  "schema": "idd-state/v1",
+  "change": "windows-acl-alias",
+  "mode": "idd",
+  "status": "closed",
+  "intent": {
+    "kind": "bug",
+    "summary": "privateDir compara la ACL del directorio de control con una cadena construida con el SID literal, pero Windows la devuelve con alias de SID conocidos (LA para el Administrador local), así que nunca la reconoce como privada",
+    "acceptance": "La comprobación compara la ACL leída con la forma canónica que Windows da a la ACL deseada (mismos alias), admite el indicador AI y rechaza ACE de más, herencia o permisos distintos; TestDirectoryIsPrivateToTheUser pasa en windows-latest"
+  },
+  "facts": {
+    "basis": "El comportamiento deseado ya está fijado por m6-windows (ACL protegida con solo el usuario); solo cambia cómo se compara, y el fallo del CI (run 40053474542) muestra la forma exacta que devuelve Windows"
+  },
+  "plan": {
+    "paths": [
+      "internal/adapter/control/acl.go",
+      "internal/adapter/control/acl_test.go",
+      "internal/adapter/control/server_windows.go",
+      "internal/adapter/control/server_windows_test.go"
+    ],
+    "work_units": 1,
+    "decision": false,
+    "operations": []
+  },
+  "signals": [
+    {
+      "id": "always",
+      "reason": "every change with a resolved intent",
+      "source": "declaration"
+    },
+    {
+      "id": "bug-fix",
+      "reason": "the intent is a bug fix",
+      "source": "declaration"
+    },
+    {
+      "id": "security-boundary",
+      "reason": "security boundary: touches internal/adapter/control/acl.go and 3 more (matches internal/adapter/control/**)",
+      "source": "declaration"
+    },
+    {
+      "id": "adr-or-quality-attribute",
+      "reason": "declared ADR 0005",
+      "source": "declaration"
+    }
+  ],
+  "impacts": [
+    {
+      "kind": "adr",
+      "id": "0005",
+      "impact": "conforms",
+      "reason": "El canal sigue siendo solo del usuario: la ACL deseada no cambia; solo se compara con la forma canónica que escribe Windows, con alias de SID conocidos"
+    }
+  ],
+  "attestations": [
+    {
+      "kind": "adr",
+      "id": "0005",
+      "evidence": "TestIsPrivateComparesCanonicalForms pasa en Linux con la forma que devolvió windows-latest (D:PAI(A;OICI;FA;;;LA)); TestRejectsOtherUsers sigue pasando en Linux. TestDirectoryIsPrivateToTheUser y TestRejectsOtherUsers en Windows se comprueban en el job windows-latest tras el push.",
+      "recorded_at": "2026-10-24T02:19:20.284Z"
+    }
+  ],
+  "obligations": [
+    {
+      "id": "checks-pass",
+      "signal": "always",
+      "status": "satisfied",
+      "evidence": [
+        "ev-2"
+      ]
+    },
+    {
+      "id": "repro-test",
+      "signal": "bug-fix",
+      "status": "satisfied",
+      "evidence": [
+        "ev-1"
+      ]
+    },
+    {
+      "id": "trust-review",
+      "signal": "security-boundary",
+      "status": "satisfied",
+      "evidence": [
+        "ev-4"
+      ]
+    },
+    {
+      "id": "adr-impact-declaration",
+      "signal": "adr-or-quality-attribute",
+      "status": "satisfied",
+      "evidence": [
+        "ev-3"
+      ]
+    }
+  ],
+  "gates": [],
+  "evidence": [
+    {
+      "id": "ev-1",
+      "kind": "repro-run-pair",
+      "obligation": "repro-test",
+      "recorded_at": "2026-10-24T02:19:14.721Z",
+      "detail": {
+        "red": "run-1",
+        "green": "run-2"
+      }
+    },
+    {
+      "id": "ev-2",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-24T02:19:21.083Z",
+      "detail": {
+        "tree": "sha256:aed2466163b3226a2102457c2a200e43110a9558b41e1c7800aee34729c04fd9",
+        "runs": [
+          "run-3",
+          "run-4",
+          "run-5",
+          "run-6"
+        ]
+      }
+    },
+    {
+      "id": "ev-3",
+      "kind": "adr-impact-declaration",
+      "obligation": "adr-impact-declaration",
+      "recorded_at": "2026-10-24T02:19:21.083Z",
+      "detail": {
+        "refs": [
+          "adr:0005 conforms"
+        ],
+        "records": []
+      }
+    },
+    {
+      "id": "ev-4",
+      "kind": "frozen-review",
+      "obligation": "trust-review",
+      "recorded_at": "2026-10-24T02:19:59.844Z",
+      "detail": {
+        "lineage_id": "sha256:d548376ced31a66002e6e8aabbc621aaaaa38aca9839f1a73c531ed6abc9a658",
+        "candidate_id": "sha256:38412f0bc61c7898f085912afba2ade086ccedd3de9c8b9540137fa3bf39ec93",
+        "candidate_tree": "2920ff679361dbfb9d18a4f7e9d4179ab75f87c7",
+        "findings_digest": "sha256:4d59fd4aa8eefff6dbf7cd085cc100ee928217573658f8bbc301aa4a3f1adc0f",
+        "attestation": "subagent-stop",
+        "receipt": {
+          "agent": "review-trust",
+          "recorded_at": "2026-10-24T02:19:54.696Z",
+          "result_digest": "sha256:1078d86604910fc5c26f1656b490aeab2bf228af214416bfd6be7e673d4901b6"
+        }
+      }
+    }
+  ],
+  "base": "b771a17c42e7a78151d22157d54ab27eedbb4325",
+  "runs": [
+    {
+      "id": "run-1",
+      "purpose": "repro-test",
+      "command": "go test -count=1 -run TestIsPrivateComparesCanonicalForms ./internal/adapter/control/",
+      "exit_code": 1,
+      "output_sha256": "sha256:0d752765410eab743438744a4e2d4b07069fc030f2fb71e38300d0694cb42456",
+      "tree": "sha256:554184b251651674f0cc399c1e4592069e739b8bf84c0956ab0b8e29c3875433",
+      "recorded_at": "2026-10-24T02:19:01.452Z"
+    },
+    {
+      "id": "run-2",
+      "purpose": "repro-test",
+      "command": "go test -count=1 -run TestIsPrivateComparesCanonicalForms ./internal/adapter/control/",
+      "exit_code": 0,
+      "output_sha256": "sha256:49c5aef8370520f3684e0c4c0ddc3dc56f041e21228cd1576a90fafb6b61410a",
+      "tree": "sha256:3aec6bd6a0cc81b347625931dd8d9ee0d0f2ac280d4a44608f01d504bac48f09",
+      "recorded_at": "2026-10-24T02:19:14.721Z"
+    },
+    {
+      "id": "run-3",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:3f09cefb15181d039041ec30e94bd0f28bc63ab15636891d1c20575b675fce80",
+      "tree": "sha256:aed2466163b3226a2102457c2a200e43110a9558b41e1c7800aee34729c04fd9",
+      "recorded_at": "2026-10-24T02:19:21.083Z"
+    },
+    {
+      "id": "run-4",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:aed2466163b3226a2102457c2a200e43110a9558b41e1c7800aee34729c04fd9",
+      "recorded_at": "2026-10-24T02:19:21.083Z"
+    },
+    {
+      "id": "run-5",
+      "purpose": "checks",
+      "name": "plugin",
+      "command": "node --test omarchy-plugin/",
+      "exit_code": 0,
+      "output_sha256": "sha256:937dd7f4b8f3afba112ea2112fa6e0fe55501fd8dd94a73e21d4f57d568c0681",
+      "tree": "sha256:aed2466163b3226a2102457c2a200e43110a9558b41e1c7800aee34729c04fd9",
+      "recorded_at": "2026-10-24T02:19:21.083Z",
+      "tests": 17
+    },
+    {
+      "id": "run-6",
+      "purpose": "checks",
+      "name": "windows-vet",
+      "command": "env GOOS=windows go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:aed2466163b3226a2102457c2a200e43110a9558b41e1c7800aee34729c04fd9",
+      "recorded_at": "2026-10-24T02:19:21.083Z"
+    }
+  ],
+  "reviews": [
+    {
+      "schema_version": 2,
+      "lineage_id": "sha256:d548376ced31a66002e6e8aabbc621aaaaa38aca9839f1a73c531ed6abc9a658",
+      "generation": 1,
+      "predecessor_lineage_id": null,
+      "migration": null,
+      "recovery": null,
+      "revision": 3,
+      "status": "approved",
+      "genesis": {
+        "candidate": {
+          "projection": "idd-tree-diff/v1",
+          "base_tree": "773d052db06a261bf16deb2b684fb8b1ae152965",
+          "candidate_tree": "2920ff679361dbfb9d18a4f7e9d4179ab75f87c7",
+          "paths": [
+            "internal/adapter/control/acl.go",
+            "internal/adapter/control/acl_test.go",
+            "internal/adapter/control/server_windows.go",
+            "internal/adapter/control/server_windows_test.go"
+          ],
+          "diff_hash": "sha256:db0e3b107d0ba86299a2daaeef5a812120ab232893ac1658f8fc120f1f3d60ed",
+          "paths_digest": "sha256:45085e085dd72d38eb4d327621c0e6913c70d84547b0530cd562bf54562dc4da",
+          "authored_lines": 64,
+          "original_changed_lines": 101
+        },
+        "candidate_id": "sha256:38412f0bc61c7898f085912afba2ade086ccedd3de9c8b9540137fa3bf39ec93",
+        "paths": [
+          "internal/adapter/control/acl.go",
+          "internal/adapter/control/acl_test.go",
+          "internal/adapter/control/server_windows.go",
+          "internal/adapter/control/server_windows_test.go"
+        ],
+        "classification": "high-risk",
+        "selected_domains": [
+          "trust"
+        ],
+        "evidence_fingerprint": "2920ff679361dbfb9d18a4f7e9d4179ab75f87c7",
+        "original_changed_lines": 101,
+        "authored_lines": 64
+      },
+      "current_candidate_id": "sha256:38412f0bc61c7898f085912afba2ade086ccedd3de9c8b9540137fa3bf39ec93",
+      "current_candidate": {
+        "projection": "idd-tree-diff/v1",
+        "base_tree": "773d052db06a261bf16deb2b684fb8b1ae152965",
+        "candidate_tree": "2920ff679361dbfb9d18a4f7e9d4179ab75f87c7",
+        "paths": [
+          "internal/adapter/control/acl.go",
+          "internal/adapter/control/acl_test.go",
+          "internal/adapter/control/server_windows.go",
+          "internal/adapter/control/server_windows_test.go"
+        ],
+        "diff_hash": "sha256:db0e3b107d0ba86299a2daaeef5a812120ab232893ac1658f8fc120f1f3d60ed",
+        "paths_digest": "sha256:45085e085dd72d38eb4d327621c0e6913c70d84547b0530cd562bf54562dc4da",
+        "authored_lines": 64,
+        "original_changed_lines": 101
+      },
+      "lenses": {
+        "trust": {
+          "selected": true,
+          "status": "completed",
+          "request_id": "windows-acl-alias:lens-start:1:0",
+          "result_digest": "sha256:0fa38eeaca8882e0d194fd5ba5d8378917d98e795204f8f7a9dfdb78f111f3cc",
+          "result": {
+            "findings": []
+          },
+          "operation": null,
+          "result_request_id": "windows-acl-alias:lens-result:1:1"
+        },
+        "runtime": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        },
+        "evolution": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        },
+        "efficiency": {
+          "selected": false,
+          "status": "skipped",
+          "request_id": null,
+          "result_digest": null,
+          "result": null,
+          "operation": null
+        }
+      },
+      "findings": [],
+      "findings_digest": "sha256:4d59fd4aa8eefff6dbf7cd085cc100ee928217573658f8bbc301aa4a3f1adc0f",
+      "correction_budget": {
+        "limit_lines": 51,
+        "used_lines": 0,
+        "failed_attempts": 0,
+        "max_failed_attempts": 3
+      },
+      "correction_history": [],
+      "validation_history": [],
+      "follow_ups": [],
+      "pending_operation": null,
+      "pending_correction": null,
+      "terminal_reason": "no-unresolved-blocking-findings"
+    }
+  ],
+  "closed_at": "2026-10-24T02:20:03.713Z"
+}
