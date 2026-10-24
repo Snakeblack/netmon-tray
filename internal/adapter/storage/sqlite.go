@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/Snakeblack/netmon-tray/internal/adapter/filelock"
 	"github.com/Snakeblack/netmon-tray/internal/domain"
 
 	_ "modernc.org/sqlite" // pure Go driver, registers "sqlite"
@@ -55,9 +56,12 @@ func Open(path string) (s *Store, err error) {
 	}
 	// Taken before the file is touched: a second engine would otherwise close
 	// the outage the first one still has open.
-	lock, err := lockHistory(path)
+	lock, err := filelock.TryLock(path + ".lock")
+	if errors.Is(err, filelock.ErrLocked) {
+		return nil, ErrInUse
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("lock history: %w", err)
 	}
 	defer func() {
 		if err != nil {
