@@ -1,0 +1,380 @@
+{
+  "schema": "idd-state/v1",
+  "change": "m4-panel-omarchy",
+  "mode": "idd",
+  "status": "closed",
+  "intent": {
+    "request": "M4 — Panel de Omarchy: Plugin QML con estado y último corte, instalable desde el binario",
+    "kind": "feature",
+    "summary": "Panel de Omarchy: plugin QML embebido en el binario que muestra el estado de la red y el último corte consumiendo netmon-tray ctl watch, instalable con netmon-tray plugin install",
+    "acceptance": "netmon-tray plugin install copia el plugin a ~/.config/omarchy/plugins/<id> y pone el widget en la barra; el botón refleja el estado (conectado, degradado, caído, sin motor) y el panel muestra estado, causa y último corte al día vía ctl watch, sin leer el historial"
+  },
+  "facts": {
+    "coverage": [
+      {
+        "category": "inputs",
+        "question": "¿el panel incluye Exportar historial (ctl export) con la carpeta resultante, o solo estado y último corte?"
+      },
+      {
+        "category": "uniqueness",
+        "question": "¿id del plugin snakeblack.netmon-tray, como snakeblack.alexa-tray?"
+      },
+      {
+        "category": "persistence",
+        "question": "¿la instalación oculta una vez el icono SNI en la bandeja de Omarchy (marca trayIconHidden) como alexa-tray, o lo deja visible/fijado?"
+      },
+      {
+        "category": "copy",
+        "question": "¿formato de hora y duración del último corte en el panel (02/01 15:04:05 y 1m5s como ctl, o duración legible 1 min 5 s) y contador en vivo del corte abierto?"
+      },
+      {
+        "category": "url-state",
+        "question": "¿el clic central del botón hace algo, dado que el contrato no tiene orden reload?"
+      },
+      {
+        "category": "accessibility",
+        "question": "¿cómo se distingue el estado en el botón de la barra: glifo distinto por estado más color de aviso, o solo color/atenuado; qué tooltip?"
+      },
+      {
+        "category": "errors",
+        "question": "¿sin motor en marcha, el panel ofrece Iniciar (systemctl --user start o binario suelto) y reintenta watch cada 5 s?"
+      }
+    ]
+  },
+  "plan": {
+    "paths": [
+      "cmd/netmon-tray/main.go",
+      "docs/contract/control-v1.md",
+      "idd/config.yaml",
+      "internal/adapter/omarchy/install.go",
+      "internal/adapter/omarchy/install_test.go",
+      "omarchy-plugin/Model.js",
+      "omarchy-plugin/Model.test.js",
+      "omarchy-plugin/Panel.qml",
+      "omarchy-plugin/embed.go",
+      "omarchy-plugin/embed_test.go",
+      "omarchy-plugin/manifest.json"
+    ],
+    "work_units": 3,
+    "decision": true,
+    "operations": []
+  },
+  "signals": [
+    {
+      "id": "always",
+      "reason": "every change with a resolved intent",
+      "source": "declaration"
+    },
+    {
+      "id": "multi-unit-or-decision",
+      "reason": "declared 3 work units",
+      "source": "declaration"
+    },
+    {
+      "id": "adr-or-quality-attribute",
+      "reason": "declared ADR 0001, 0002, 0003, 0005 and quality scenario live-status, minimal-footprint",
+      "source": "declaration"
+    },
+    {
+      "id": "persistent-data",
+      "reason": "persistent data: internal/adapter/omarchy/install.go adds os.WriteFile",
+      "source": "diff"
+    }
+  ],
+  "impacts": [
+    {
+      "kind": "adr",
+      "id": "0001",
+      "impact": "conforms",
+      "reason": "El panel es un cliente delgado de ctl; no sondea ni escribe: el motor sigue siendo el único proceso que sondea, clasifica y escribe"
+    },
+    {
+      "kind": "adr",
+      "id": "0002",
+      "impact": "conforms",
+      "reason": "El panel QML y el instalador viven en adaptadores de Omarchy (omarchy-plugin/, internal/adapter/omarchy); el dominio no cambia"
+    },
+    {
+      "kind": "adr",
+      "id": "0003",
+      "impact": "conforms",
+      "reason": "El panel nunca lee history.db; exporta pidiendo ctl export al motor, único propietario"
+    },
+    {
+      "kind": "adr",
+      "id": "0005",
+      "impact": "conforms",
+      "reason": "El panel consume el contrato v1 tal cual (watch y export por ctl) sin añadir órdenes ni campos"
+    },
+    {
+      "kind": "scenario",
+      "id": "live-status",
+      "impact": "conforms",
+      "reason": "El panel mantiene ctl watch abierto y refleja cada evento; toda la E/S va en Process asíncronos, ningún manejador QML bloquea"
+    },
+    {
+      "kind": "scenario",
+      "id": "minimal-footprint",
+      "impact": "conforms",
+      "reason": "Un proceso ctl watch por barra sin sondeo; el temporizador de 1 s solo corre con el panel abierto y un corte en curso; reintento cada 5 s solo sin motor"
+    }
+  ],
+  "attestations": [
+    {
+      "kind": "adr",
+      "id": "0001",
+      "evidence": "Un solo punto de entrada (cmd/netmon-tray/main.go); plugin y ctl son subcomandos que salen antes de arrancar el motor. Panel.qml solo hace E/S con Process asíncronos (watch, export) y execDetached",
+      "recorded_at": "2026-10-23T23:52:48.537Z"
+    },
+    {
+      "kind": "adr",
+      "id": "0003",
+      "evidence": "El panel no abre history.db: grep de history en omarchy-plugin/ sin accesos; exporta con ctl export. Las pruebas de storage (reapertura, migración, retención) siguen en verde en go test ./...",
+      "recorded_at": "2026-10-23T23:52:48.598Z"
+    },
+    {
+      "kind": "adr",
+      "id": "0005",
+      "evidence": "Pruebas de contrato del adaptador control sin cambios y en verde; verificado en vivo que el panel mantiene netmon-tray ctl watch abierto contra el socket (pgrep) y muestra Conectado (captura)",
+      "recorded_at": "2026-10-23T23:52:48.658Z"
+    },
+    {
+      "kind": "scenario",
+      "id": "live-status",
+      "evidence": "Verificado en Omarchy: el panel refleja el estado de ctl watch (captura con Conectado y glifo web_check); tras un comando roto se recupera en menos de 1 s al corregirlo, y sin motor reintenta cada ~5 s (journal). Ningún manejador QML bloquea: todo va por Process",
+      "recorded_at": "2026-10-23T23:52:48.717Z"
+    },
+    {
+      "kind": "scenario",
+      "id": "minimal-footprint",
+      "evidence": "El motor no cambia. El panel añade un proceso ctl watch inactivo por barra; el temporizador de 1 s solo con panel abierto y corte en curso; reintento cada 5 s solo sin motor",
+      "recorded_at": "2026-10-23T23:52:48.776Z"
+    }
+  ],
+  "obligations": [
+    {
+      "id": "checks-pass",
+      "signal": "always",
+      "status": "satisfied",
+      "evidence": [
+        "ev-4"
+      ]
+    },
+    {
+      "id": "living-doc",
+      "signal": "multi-unit-or-decision",
+      "status": "satisfied",
+      "evidence": [
+        "ev-6"
+      ]
+    },
+    {
+      "id": "adr-impact-declaration",
+      "signal": "adr-or-quality-attribute",
+      "status": "satisfied",
+      "evidence": [
+        "ev-5"
+      ]
+    },
+    {
+      "id": "migration-compat-and-test",
+      "signal": "persistent-data",
+      "status": "satisfied",
+      "evidence": [
+        "ev-3"
+      ]
+    }
+  ],
+  "gates": [
+    {
+      "id": "open-facts",
+      "status": "resolved",
+      "answer": "todas las recomendadas: id snakeblack.netmon-tray; ocultar una vez el icono SNI con trayIconHidden; hora 02/01 15:04:05 y duración legible (1 min 5 s) con contador en vivo del corte abierto; botón Exportar historial con carpeta y Abrir carpeta; sin motor botón atenuado, Iniciar (systemctl --user start netmon-tray.service o binario suelto) y reintento de watch cada 5 s; glifo por estado + color de aviso + atenuado sin motor, tooltip con el texto del estado; clic central sin acción; añadir check plugin: node --test omarchy-plugin/",
+      "source": "user"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "ev-1",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-23T23:52:16.274Z",
+      "detail": {
+        "tree": "sha256:6d9be9b7fe42266d671ed342018c56344393dcbff31b0a62421eadf2c6f54034",
+        "runs": [
+          "run-1",
+          "run-2",
+          "run-3"
+        ]
+      }
+    },
+    {
+      "id": "ev-2",
+      "kind": "adr-impact-declaration",
+      "obligation": "adr-impact-declaration",
+      "recorded_at": "2026-10-23T23:52:16.274Z",
+      "detail": {
+        "refs": [
+          "adr:0001 conforms",
+          "adr:0002 conforms",
+          "adr:0003 conforms",
+          "adr:0005 conforms",
+          "scenario:live-status conforms",
+          "scenario:minimal-footprint conforms"
+        ],
+        "records": [],
+        "tree": "sha256:6d9be9b7fe42266d671ed342018c56344393dcbff31b0a62421eadf2c6f54034",
+        "fitness": [
+          "run-4"
+        ]
+      }
+    },
+    {
+      "id": "ev-3",
+      "kind": "migration-test",
+      "obligation": "migration-compat-and-test",
+      "recorded_at": "2026-10-23T23:52:26.030Z",
+      "detail": {
+        "run": "run-5",
+        "tree": "sha256:d23fc35d941c6b93b7b962cedb7bf80d629a1b2350512352103b94b50c3c5c9d",
+        "plan": "El historial (history.db) y su esquema no cambian. Lo persistente nuevo es la copia del plugin en ~/.config/omarchy/plugins/snakeblack.netmon-tray y dos claves de shell.json (hidden del omarchy.tray y trayIconHidden del widget). Actualizar el plugin escribe en una carpeta oculta y la mueve con rename; si el rename falla, la copia anterior vuelve a su sitio. Una copia igual no se toca, un enlace de desarrollo o un clon git se respetan, y la marca trayIconHidden respeta un Show posterior. Rollback: omarchy plugin remove snakeblack.netmon-tray y Show en la bandeja"
+      }
+    },
+    {
+      "id": "ev-4",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-23T23:52:49.188Z",
+      "detail": {
+        "tree": "sha256:6d9be9b7fe42266d671ed342018c56344393dcbff31b0a62421eadf2c6f54034",
+        "runs": [
+          "run-6",
+          "run-7",
+          "run-8"
+        ]
+      }
+    },
+    {
+      "id": "ev-5",
+      "kind": "adr-impact-declaration",
+      "obligation": "adr-impact-declaration",
+      "recorded_at": "2026-10-23T23:52:49.188Z",
+      "detail": {
+        "refs": [
+          "adr:0001 conforms",
+          "adr:0002 conforms",
+          "adr:0003 conforms",
+          "adr:0005 conforms",
+          "scenario:live-status conforms",
+          "scenario:minimal-footprint conforms"
+        ],
+        "records": [],
+        "tree": "sha256:6d9be9b7fe42266d671ed342018c56344393dcbff31b0a62421eadf2c6f54034",
+        "fitness": [
+          "run-9"
+        ]
+      }
+    },
+    {
+      "id": "ev-6",
+      "kind": "living-doc-current",
+      "obligation": "living-doc",
+      "recorded_at": "2026-10-23T23:52:57.165Z"
+    }
+  ],
+  "base": "7ff147a0c4116670f5ec44d5ff834d17625ff14d",
+  "runs": [
+    {
+      "id": "run-1",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:389757b8f26479fd22ca08465a1f6599562ec0d816f918d6a9b9e6a3aa7c3748",
+      "tree": "sha256:6d9be9b7fe42266d671ed342018c56344393dcbff31b0a62421eadf2c6f54034",
+      "recorded_at": "2026-10-23T23:52:16.274Z"
+    },
+    {
+      "id": "run-2",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:6d9be9b7fe42266d671ed342018c56344393dcbff31b0a62421eadf2c6f54034",
+      "recorded_at": "2026-10-23T23:52:16.274Z"
+    },
+    {
+      "id": "run-3",
+      "purpose": "checks",
+      "name": "plugin",
+      "command": "node --test omarchy-plugin/",
+      "exit_code": 0,
+      "output_sha256": "sha256:dba1651103686319acd39fbeb890b1d86d4258b658700ddaa383086b08b0e7ff",
+      "tree": "sha256:6d9be9b7fe42266d671ed342018c56344393dcbff31b0a62421eadf2c6f54034",
+      "recorded_at": "2026-10-23T23:52:16.274Z",
+      "tests": 17
+    },
+    {
+      "id": "run-4",
+      "purpose": "fitness",
+      "ref": "adr:0002",
+      "command": "! go list -deps ./internal/domain/... | grep -E 'internal/adapter|dbus|systemd'",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:6d9be9b7fe42266d671ed342018c56344393dcbff31b0a62421eadf2c6f54034",
+      "recorded_at": "2026-10-23T23:52:16.274Z"
+    },
+    {
+      "id": "run-5",
+      "purpose": "migration-test",
+      "command": "go test ./internal/adapter/omarchy/ -run 'TestInstall(Again|Replaces|Completes|Drops|KeepsTheDevelopmentLink|RefusesAGitClone|HidesTheTrayIconOnce|LeavesTheTrayIconAloneOnceMarked|MarksAnIcon)' -v -count=1",
+      "exit_code": 0,
+      "output_sha256": "sha256:f2e3f23d4c9c9dbdd737f7c9314490d55943b5b3632914dcf767d4412daadfbb",
+      "tree": "sha256:d23fc35d941c6b93b7b962cedb7bf80d629a1b2350512352103b94b50c3c5c9d",
+      "recorded_at": "2026-10-23T23:52:26.030Z"
+    },
+    {
+      "id": "run-6",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:a16ed33527dc79100840f303f51ea2ab04dfb6a13b8dd1c651c21add90483219",
+      "tree": "sha256:6d9be9b7fe42266d671ed342018c56344393dcbff31b0a62421eadf2c6f54034",
+      "recorded_at": "2026-10-23T23:52:49.188Z"
+    },
+    {
+      "id": "run-7",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:6d9be9b7fe42266d671ed342018c56344393dcbff31b0a62421eadf2c6f54034",
+      "recorded_at": "2026-10-23T23:52:49.188Z"
+    },
+    {
+      "id": "run-8",
+      "purpose": "checks",
+      "name": "plugin",
+      "command": "node --test omarchy-plugin/",
+      "exit_code": 0,
+      "output_sha256": "sha256:d70fd4552b1381e56e1faced6ada214a8b7c223247574ffd206a7c1118baa73f",
+      "tree": "sha256:6d9be9b7fe42266d671ed342018c56344393dcbff31b0a62421eadf2c6f54034",
+      "recorded_at": "2026-10-23T23:52:49.188Z",
+      "tests": 17
+    },
+    {
+      "id": "run-9",
+      "purpose": "fitness",
+      "ref": "adr:0002",
+      "command": "! go list -deps ./internal/domain/... | grep -E 'internal/adapter|dbus|systemd'",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:6d9be9b7fe42266d671ed342018c56344393dcbff31b0a62421eadf2c6f54034",
+      "recorded_at": "2026-10-23T23:52:49.188Z"
+    }
+  ],
+  "closed_at": "2026-10-23T23:52:57.165Z"
+}
