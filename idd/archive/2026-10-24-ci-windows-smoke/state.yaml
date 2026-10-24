@@ -1,0 +1,162 @@
+{
+  "schema": "idd-state/v1",
+  "change": "ci-windows-smoke",
+  "mode": "idd",
+  "status": "closed",
+  "intent": {
+    "request": "1",
+    "kind": "feature",
+    "summary": "Prueba de humo en windows-latest: compila los dos binarios y ejecuta el motor real (version, ctl sin motor, service install con la clave Run, ctl status hasta que el motor sondea, segundo motor sale con 4, service remove) y muestra el log",
+    "acceptance": "El job de Windows ejecuta la prueba de humo con los binarios reales y falla si cualquiera de esos pasos no da el resultado esperado; el log del motor queda en la salida del job"
+  },
+  "facts": {
+    "coverage": [
+      {
+        "category": "inputs",
+        "question": "\"¿La prueba de humo corre solo en el CI o también en el release antes de publicar?\""
+      },
+      {
+        "category": "uniqueness",
+        "cite": {
+          "kind": "path",
+          "path": "cmd/netmon-tray/main.go",
+          "line": 62
+        }
+      },
+      {
+        "category": "persistence",
+        "cite": {
+          "kind": "path",
+          "path": "README.md",
+          "line": 89
+        }
+      },
+      {
+        "category": "copy",
+        "cite": {
+          "kind": "path",
+          "path": "internal/adapter/runkey/runkey.go",
+          "line": 105
+        }
+      },
+      {
+        "category": "url-state",
+        "cite": {
+          "kind": "path",
+          "path": "docs/product/brief.md",
+          "line": 33
+        }
+      },
+      {
+        "category": "accessibility",
+        "cite": {
+          "kind": "path",
+          "path": "internal/adapter/tray/tray.go",
+          "line": 110
+        }
+      },
+      {
+        "category": "errors",
+        "question": "\"Si el motor no llega a sondear en el runner (ctl status sigue en unknown a los 30 s, por ejemplo porque la bandeja no puede crear el icono sin escritorio), ¿la prueba falla o solo avisa?\""
+      }
+    ]
+  },
+  "plan": {
+    "paths": [
+      ".github/scripts/windows-smoke.ps1",
+      ".github/workflows/ci.yml",
+      ".github/workflows/release.yml",
+      "README.md"
+    ],
+    "work_units": 1,
+    "decision": false,
+    "operations": []
+  },
+  "signals": [
+    {
+      "id": "always",
+      "reason": "every change with a resolved intent",
+      "source": "declaration"
+    }
+  ],
+  "obligations": [
+    {
+      "id": "checks-pass",
+      "signal": "always",
+      "status": "satisfied",
+      "evidence": [
+        "ev-1"
+      ]
+    }
+  ],
+  "gates": [
+    {
+      "id": "open-facts",
+      "status": "resolved",
+      "answer": "los recomendados: la prueba falla si el motor sigue en unknown a los 30 s, y corre en el CI y también en el release antes de publicar",
+      "source": "user"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "ev-1",
+      "kind": "check-run",
+      "obligation": "checks-pass",
+      "recorded_at": "2026-10-24T02:26:46.429Z",
+      "detail": {
+        "tree": "sha256:d5cbfd2ca8b02160e8cc8f2c18f7031b94c36de744d77e9e6b972afb6ad8c55f",
+        "runs": [
+          "run-1",
+          "run-2",
+          "run-3",
+          "run-4"
+        ]
+      }
+    }
+  ],
+  "base": "24c95f94b3d9a16773055dd0f3c936843f62f0fa",
+  "runs": [
+    {
+      "id": "run-1",
+      "purpose": "checks",
+      "name": "test",
+      "command": "go test ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:9901d05cec53a5b004401d4f48eb8d7763fc383fa576fd349c640b83cfdc7855",
+      "tree": "sha256:d5cbfd2ca8b02160e8cc8f2c18f7031b94c36de744d77e9e6b972afb6ad8c55f",
+      "recorded_at": "2026-10-24T02:26:46.429Z"
+    },
+    {
+      "id": "run-2",
+      "purpose": "checks",
+      "name": "vet",
+      "command": "go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:d5cbfd2ca8b02160e8cc8f2c18f7031b94c36de744d77e9e6b972afb6ad8c55f",
+      "recorded_at": "2026-10-24T02:26:46.429Z"
+    },
+    {
+      "id": "run-3",
+      "purpose": "checks",
+      "name": "plugin",
+      "command": "node --test omarchy-plugin/",
+      "exit_code": 0,
+      "output_sha256": "sha256:5d2c64bcb60e1e55eb36002bf419fcb8059abdf17c1895f44206b74bada54f59",
+      "tree": "sha256:d5cbfd2ca8b02160e8cc8f2c18f7031b94c36de744d77e9e6b972afb6ad8c55f",
+      "recorded_at": "2026-10-24T02:26:46.429Z",
+      "tests": 17
+    },
+    {
+      "id": "run-4",
+      "purpose": "checks",
+      "name": "windows-vet",
+      "command": "env GOOS=windows go vet ./...",
+      "exit_code": 0,
+      "output_sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tree": "sha256:d5cbfd2ca8b02160e8cc8f2c18f7031b94c36de744d77e9e6b972afb6ad8c55f",
+      "recorded_at": "2026-10-24T02:26:46.429Z"
+    }
+  ],
+  "closed_at": "2026-10-24T02:26:56.593Z"
+}
